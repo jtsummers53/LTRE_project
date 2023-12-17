@@ -1,0 +1,1711 @@
+---
+title: "Transient LTRE"
+author: "Jeremy Summers"
+date: "10/15/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
+library(tidyverse)
+library(plyr)
+library(reshape2)
+library(RColorBrewer)
+library(abind)
+library(viridis)
+library(glmmTMB)
+#set colors for social classes
+colors <- brewer.pal(12, "Paired")[c(7, 8, 3, 4, 5, 6, 1, 2, 9 , 10)]
+names(colors) <- c("jm", "jf", "hm", "hf", "nm", "nf", "om", "of", "bm", "bf")
+rate_colors <- brewer.pal(8, name="Dark2")[c(1,2,3,4,7)]
+names(rate_colors) <- c("B", "F", "I", "P", "N")
+startYr <- 1988
+endYr <- 2020
+```
+
+In this file I will attempt a transient LTRE based on the methods of Koons *et al.* 2016. This method utilizes matrix calculus to find the sensitivity of the population growth rate to the population structure (proportion of individuals within each stage class).
+
+This file also includes a time lag of 1 year.
+
+
+## Generating population growth rates
+
+First I need to generate all the population growth rate values that I will need to use. For this, I will need the population vectors for each resampling of the vital rates as well as the projection matrices for each of these realizations.
+
+```{r}
+load("data/generated_data/vr_clean_F_4stageDemo.rdata")
+vr.mat.F <- vr.mat
+pop.vec.F <- pop.vec
+
+load("data/generated_data/vr_clean_M_4stageDemo.rdata")
+vr.mat.M <- vr.mat
+pop.vec.M <- pop.vec
+```
+
+Next I will generate the equation form of the projection matrix.
+
+```{r}
+#The 4-stage matrix model
+jay.all.mat <- expression(Pj*Bj*(Fn/2) + 
+                            I*Bi*(Fn/2),#fecundity of new 1-year old breeders
+                      Ph*Bh*(Fn/2) +
+                        I*Bi*(Fn/2) ,#fecundity of new 2+year old breeders
+                      Pb*(1-Pb)*Bb*(Fn/2) + #fecundity of current
+                        (Pb^2)*Dn*Bb*(Fn/2) +#new pairs
+                        (Pb^2)*(1-Dn)*(Fo/2) + I*Bi*(Fn/2),
+                      Pb*(1-Pb)*Bb*(Fn/2) + #fecundity of current old pairs
+                        (Pb^2)*Do*Bb*(Fn/2) +
+                        (Pb^2)*(1-Do)*(Fo/2) + I*Bi*(Fn/2),
+                      
+                      #all contribute to immigrants entering since its per individual
+                      Pj*(1-Bj) + I*(1-Bi), #juveniles become helpers
+                      Ph*(1-Bh) + I*(1-Bi), #helpers staying as helpers
+                      Pb*(1-Pb)*(1-Bb) + #new pair individuals fail to re-pair
+                        (Pb^2)*Dn*(1-Bb) +
+                        I*(1-Bi),
+                      Pb*(1-Pb)*(1-Bb) + #old pair individuals fail to re-pair
+                        (Pb^2)*Do*(1-Bb) +
+                        I*(1-Bi),
+                      
+                      Pj*Bj + I*Bi, #juveniles forming a new pair
+                      Ph*Bh + I*Bi, #helpers forming a new pair
+                      Pb*(1-Pb)*Bb + # individual forms another new pair
+                        (Pb^2)*Dn*Bb + I*Bi,
+                      Pb*(1-Pb)*Bb + # individual forms a new pair after pair dissolves
+                        (Pb^2)*Do*Bb + I*Bi,
+                      
+                      0, #juveniles cannot form old pair
+                      0, #helpers cannot form old pair
+                      (Pb^2)*(1-Dn), # new pair becoming old
+                      (Pb^2)*(1-Do) #old pair staying together
+)
+```
+
+Now I will project the population by 1 year for each iteration and year.
+
+```{r}
+#create matrix to store results
+lambda.real.F <- matrix(nrow = dim(pop.vec.F)[1], 
+                      ncol = dim(pop.vec.F)[3] - 2, 
+                      dimnames = list(c(1:dim(pop.vec.F)[1]),
+                                      c((startYr + 1):endYr)))
+#loop for each iteration and year
+for(i in 1:dim(lambda.real.F)[1]){
+  for(year in 1:dim(lambda.real.F)[2]){
+    N0 <- pop.vec.F[i,,year]
+    A0 <- matrix(sapply(jay.all.mat,
+            eval, envir = as.list(vr.mat.F[i,, year]), NULL),
+            nrow = sqrt(length(jay.all.mat)),
+            byrow = TRUE)
+    N1 <- A0 %*% N0
+    A1 <- matrix(sapply(jay.all.mat,
+            eval, envir = as.list(vr.mat.F[i,, year + 1]), NULL),
+            nrow = sqrt(length(jay.all.mat)),
+            byrow = TRUE)
+    N2 <- A1 %*% N1
+    lambda.real.F[i, year] <- sum(N2)/sum(N1)
+  }
+}
+
+# repeat for males
+
+#create matrix to store results
+lambda.real.M <- matrix(nrow = dim(pop.vec.M)[1], 
+                      ncol = dim(pop.vec.M)[3] - 2, 
+                      dimnames = list(c(1:dim(pop.vec.M)[1]),
+                                      c((startYr + 1):endYr)))
+#loop for each iteration and year
+for(i in 1:dim(lambda.real.M)[1]){
+  for(year in 1:dim(lambda.real.M)[2]){
+    N0 <- pop.vec.M[i,,year]
+    A0 <- matrix(sapply(jay.all.mat,
+            eval, envir = as.list(vr.mat.M[i,, year]), NULL),
+            nrow = sqrt(length(jay.all.mat)),
+            byrow = TRUE)
+    N1 <- A0 %*% N0
+    A1 <- matrix(sapply(jay.all.mat,
+            eval, envir = as.list(vr.mat.M[i,, year + 1]), NULL),
+            nrow = sqrt(length(jay.all.mat)),
+            byrow = TRUE)
+    N2 <- A1 %*% N1
+    lambda.real.M[i, year] <- sum(N2)/sum(N1)
+  }
+}
+```
+
+Next, I need to create formulas that determine the sensitivities of lambda to the 13 vital rates in my model, as well as the stage distribution of the 4 stages within my model.
+
+```{r}
+library(Deriv)
+proj.fun <- function(Pjq, Phq, Pbq, Bjq, Bhq, Bbq, Biq, 
+                     Dnq, Doq, Iq, Fnq, Foq, Nj, Nh, Nn, No,
+                     Pjc, Phc, Pbc, Bjc, Bhc, Bbc, Bic, 
+                     Dnc, Doc, Ic, Fnc, Foc){
+#generate projection matrix
+sum(
+  # current year's vital rates
+  matrix(c(Pjc*Bjc*Fnc + 
+                            Ic*Bic*(Fnc/2),#fecundity of new 1-year old breeders
+                      Phc*Bhc*(Fnc/2) +
+                        Ic*Bic*(Fnc/2) ,#fecundity of new 2+year old breeders
+                      Pbc*(1-Pbc)*Bbc*(Fnc/2) + #fecundity of current
+                        (Pbc^2)*Dnc*Bbc*(Fnc/2) +#new pairs
+                        (Pbc^2)*(1-Dnc)*(Foc/2) + Ic*Bic*Fnc,
+                      Pbc*(1-Pbc)*Bbc*(Fnc/2) + #fecundity of current old pairs
+                        (Pbc^2)*Doc*Bbc*(Fnc/2) +
+                        (Pbc^2)*(1-Doc)*(Foc/2) + Ic*Bic*(Fnc/2),
+           # all are divided by 2 due to only one sex being included in each model
+                      
+                      #all contribute to immigrants entering since its per individual
+                      Pjc*(1-Bjc) + Ic*(1-Bic), #juveniles become helpers
+                      Phc*(1-Bhc) + Ic*(1-Bic), #helpers staying as helpers
+                      Pbc*(1-Pbc)*(1-Bbc) + #new pair individuals fail to re-pair
+                        (Pbc^2)*Dnc*(1-Bbc) +
+                        Ic*(1-Bic),
+                      Pbc*(1-Pbc)*(1-Bbc) + #old pair individuals fail to re-pair
+                        (Pbc^2)*Doc*(1-Bbc) +
+                        Ic*(1-Bic),
+                      
+                      Pjc*Bjc + Ic*Bic, #juveniles forming a new pair
+                      Phc*Bhc + Ic*Bic, #helpers forming a new pair
+                      Pbc*(1-Pbc)*Bbc + # individual forms another new pair
+                        (Pbc^2)*Dnc*Bbc + Ic*Bic,
+                      Pbc*(1-Pbc)*Bbc + # individual forms a new pair 
+             #after pair dissolves
+                        (Pbc^2)*Doc*Bbc + Ic*Bic,
+                      
+                      0, #juveniles cannot form old pair
+                      0, #helpers cannot form old pair
+                      (Pbc^2)*(1-Dnc), # new pair becoming old
+                      (Pbc^2)*(1-Doc)), #old pair staying together
+  nrow = 4, ncol = 4, byrow = TRUE) %*%
+  # previous year's vital rates
+  matrix(c(Pjq*Bjq*(Fnq/2) + 
+                            Iq*Biq*(Fnq/2),#fecundity of new 1-year old breeders
+                      Phq*Bhq*(Fnq/2) +
+                        Iq*Biq*(Fnq/2) ,#fecundity of new 2+year old breeders
+                      Pbq*(1-Pbq)*Bbq*(Fnq/2) + #fecundity of current
+                        (Pbq^2)*Dnq*Bbq*(Fnq/2) +#new pairs
+                        (Pbq^2)*(1-Dnq)*(Foq/2) + Iq*Biq*(Fnq/2),
+                      Pbq*(1-Pbq)*Bbq*(Fnq/2) + #fecundity of current old pairs
+                        (Pbq^2)*Doq*Bbq*(Fnq/2) +
+                        (Pbq^2)*(1-Doq)*(Foq/2) + Iq*Biq*(Fnq/2),
+                      
+                      #all contribute to immigrants entering since its per individual
+                      Pjq*(1-Bjq) + Iq*(1-Biq), #juveniles become helpers
+                      Phq*(1-Bhq) + Iq*(1-Biq), #helpers staying as helpers
+                      Pbq*(1-Pbq)*(1-Bbq) + #new pair individuals fail to re-pair
+                        (Pbq^2)*Dnq*(1-Bbq) +
+                        Iq*(1-Biq),
+                      Pbq*(1-Pbq)*(1-Bbq) + #old pair individuals fail to re-pair
+                        (Pbq^2)*Doq*(1-Bbq) +
+                        Iq*(1-Biq),
+                      
+                      Pjq*Bjq + Iq*Biq, #juveniles forming a new pair
+                      Phq*Bhq + Iq*Biq, #helpers forming a new pair
+                      Pbq*(1-Pbq)*Bbq + # individual forms another new pair
+                        (Pbq^2)*Dnq*Bbq + Iq*Biq,
+                      Pbq*(1-Pbq)*Bbq + # individual forms a new pair 
+             #after pair dissolves
+                        (Pbq^2)*Doq*Bbq + Iq*Biq,
+                      
+                      0, #juveniles cannot form old pair
+                      0, #helpers cannot form old pair
+                      (Pbq^2)*(1-Dnq), # new pair becoming old
+                      (Pbq^2)*(1-Doq)),
+  nrow = 4, ncol = 4, byrow = TRUE) %*% c(Nj, Nh, Nn, No))/
+    # divide by previous year's population size
+    sum(matrix(c(Pjq*Bjq*(Fnq/2) + 
+                            Iq*Biq*(Fnq/2),#fecundity of new 1-year old breeders
+                      Phq*Bhq*(Fnq/2) +
+                        Iq*Biq*(Fnq/2) ,#fecundity of new 2+year old breeders
+                      Pbq*(1-Pbq)*Bbq*(Fnq/2) + #fecundity of current
+                        (Pbq^2)*Dnq*Bbq*(Fnq/2) +#new pairs
+                        (Pbq^2)*(1-Dnq)*(Foq/2) + Iq*Biq*(Fnq/2),
+                      Pbq*(1-Pbq)*Bbq*(Fnq/2) + #fecundity of current old pairs
+                        (Pbq^2)*Doq*Bbq*(Fnq/2) +
+                        (Pbq^2)*(1-Doq)*(Foq/2) + Iq*Biq*(Fnq/2),
+                      
+                      #all contribute to immigrants entering since its per individual
+                      Pjq*(1-Bjq) + Iq*(1-Biq), #juveniles become helpers
+                      Phq*(1-Bhq) + Iq*(1-Biq), #helpers staying as helpers
+                      Pbq*(1-Pbq)*(1-Bbq) + #new pair individuals fail to re-pair
+                        (Pbq^2)*Dnq*(1-Bbq) +
+                        Iq*(1-Biq),
+                      Pbq*(1-Pbq)*(1-Bbq) + #old pair individuals fail to re-pair
+                        (Pbq^2)*Doq*(1-Bbq) +
+                        Iq*(1-Biq),
+                      
+                      Pjq*Bjq + Iq*Biq, #juveniles forming a new pair
+                      Phq*Bhq + Iq*Biq, #helpers forming a new pair
+                      Pbq*(1-Pbq)*Bbq + # individual forms another new pair
+                        (Pbq^2)*Dnq*Bbq + Iq*Biq,
+                      Pbq*(1-Pbq)*Bbq + # individual forms a new pair 
+             #after pair dissolves
+                        (Pbq^2)*Doq*Bbq + Iq*Biq,
+                      
+                      0, #juveniles cannot form old pair
+                      0, #helpers cannot form old pair
+                      (Pbq^2)*(1-Dnq), # new pair becoming old
+                      (Pbq^2)*(1-Doq)),
+  nrow = 4, ncol = 4, byrow = TRUE) %*% c(Nj, Nh, Nn, No))
+}
+#create function that returns the sensitivity of lambda given the vital rates and stage
+#distribution
+sen.fun <- Deriv(proj.fun)
+```
+
+Now I can calculate all values needed for a LTRE: variance in lambda, covariances in vital rates, and sensitivities of vital rates.
+
+```{r}
+#convert population vector to stage distribution
+pop.vec.dist.F <- sweep(pop.vec.F, c(1,3), apply(pop.vec.F, c(1, 3), sum), `/`)
+dimnames(pop.vec.dist.F)[[2]] <- c("Nj", "Nh", "Nn", "No")
+
+#combine population stage distribution with vital rates
+pop.vr.mat.F <- abind(vr.mat.F, pop.vec.dist.F[,, 1:dim(vr.mat.F)[3]],
+                      along = 2)
+
+#separate "this year" and "last year"
+pop.vr.mat.q.F <- pop.vr.mat.F[,,1:(dim(pop.vr.mat.F)[3] - 1)]
+colnames(pop.vr.mat.q.F)[1:(dim(pop.vr.mat.q.F)[2] - dim(pop.vec.F)[2])] <- paste(
+  colnames(pop.vr.mat.q.F)[1:(dim(pop.vr.mat.q.F)[2] - dim(pop.vec.F)[2])],
+                                        "q", sep="")
+
+pop.vr.mat.c.F <- pop.vr.mat.F[,1:(dim(pop.vr.mat.q.F)[2] - dim(pop.vec.F)[2]),
+                          2:dim(pop.vr.mat.F)[3]]
+colnames(pop.vr.mat.c.F) <- paste(colnames(pop.vr.mat.c.F), "c" ,sep="")
+
+pop.vr.mat.full.F <- abind(pop.vr.mat.q.F,
+                           pop.vr.mat.c.F, along=2)
+
+#calculate covariance of vital rates
+pop.vr.cov.F <- aaply(pop.vr.mat.full.F, 1, function(x) cov(t(x)))
+
+#calculate annual variation in lambda
+lambda.var.F <- apply(lambda.real.F, 1, var)
+
+# calculate the mean vital rates across years for each iteration
+vr.mean.mat.F <- apply(pop.vr.mat.full.F, c(2,1), mean)
+
+# calculate sensitivity values for each mean matrix
+sen.mean.mat.F <- apply(vr.mean.mat.F, 2, function(x) do.call(sen.fun, as.list(x)))
+
+# multiply the sensitivities together
+sen.mean.mult.F <- aaply(sen.mean.mat.F, 2, function(x) outer(x, x))
+```
+
+
+Repeat for males
+```{r}
+#convert population vector to stage distribution
+pop.vec.dist.M <- sweep(pop.vec.M, c(1,3), apply(pop.vec.M, c(1, 3), sum), `/`)
+dimnames(pop.vec.dist.M)[[2]] <- c("Nj", "Nh", "Nn", "No")
+
+#combine population stage distribution with vital rates
+pop.vr.mat.M <- abind(vr.mat.M, pop.vec.dist.M[,, 1:dim(vr.mat.M)[3]],
+                      along = 2)
+
+#separate "this year" and "last year"
+pop.vr.mat.q.M <- pop.vr.mat.M[,,1:(dim(pop.vr.mat.M)[3] - 1)]
+colnames(pop.vr.mat.q.M)[1:(dim(pop.vr.mat.q.M)[2] - dim(pop.vec.M)[2])] <- paste(
+  colnames(pop.vr.mat.q.M)[1:(dim(pop.vr.mat.q.M)[2] - dim(pop.vec.M)[2])],
+                                        "q", sep="")
+
+pop.vr.mat.c.M <- pop.vr.mat.M[,1:(dim(pop.vr.mat.q.M)[2] - dim(pop.vec.M)[2]),
+                          2:dim(pop.vr.mat.M)[3]]
+colnames(pop.vr.mat.c.M) <- paste(colnames(pop.vr.mat.c.M), "c" ,sep="")
+
+pop.vr.mat.full.M <- abind(pop.vr.mat.q.M,
+                           pop.vr.mat.c.M, along=2)
+
+#calculate covariance of vital rates
+pop.vr.cov.M <- aaply(pop.vr.mat.full.M, 1, function(x) cov(t(x)))
+
+#calculate annual variation in lambda
+lambda.var.M <- apply(lambda.real.M, 1, var)
+
+# calculate the mean vital rates across years for each iteration
+vr.mean.mat.M <- apply(pop.vr.mat.full.M, c(2,1), mean)
+
+# calculate sensitivity values for each mean matrix
+sen.mean.mat.M <- apply(vr.mean.mat.M, 2, function(x) do.call(sen.fun, as.list(x)))
+
+# multiply the sensitivities together
+sen.mean.mult.M <- aaply(sen.mean.mat.M, 2, function(x) outer(x, x))
+```
+
+
+Next I will use these data to calculate the contribution to the variance in lambda over the 23 year period.
+
+```{r}
+# multiply the sensitivity matrix and the covariance matrix and then
+# normalize by the variance in lambda for each iteration
+contrib.t.F <- (sen.mean.mult.F*pop.vr.cov.F)/lambda.var.F
+```
+
+```{r}
+# multiply the sensitivity matrix and the covariance matrix and then
+# normalize by the variance in lambda for each iteration
+contrib.t.M <- (sen.mean.mult.M*pop.vr.cov.M)/lambda.var.M
+```
+
+## Analysis
+
+First I will melt the results of the contributions so that I can plot the distribution of contributions (without breaking down covariances).
+
+```{r}
+# convert array to dataframe
+contrib.melt <- melt(contrib.t.F)
+colnames(contrib.melt) <- c("iter", "vital_rate", "co_vital_rate", "value")
+
+# divide up columns for easier identification
+contrib.melt$vital_rate_time <- ifelse(grepl("c",contrib.melt$vital_rate),"cur",
+                                       "prev")
+contrib.melt$co_vital_rate_time <- ifelse(grepl("c",contrib.melt$co_vital_rate),"cur",
+                                       "prev")
+
+contrib.melt$vital_rate <- gsub( "q", "", as.character(contrib.melt$vital_rate))
+contrib.melt$vital_rate <- gsub( "c", "", as.character(contrib.melt$vital_rate))
+
+contrib.melt$co_vital_rate <- gsub( "q", "", as.character(contrib.melt$co_vital_rate))
+contrib.melt$co_vital_rate <- gsub( "c", "", as.character(contrib.melt$co_vital_rate))
+
+contrib.melt$vital_rate <- factor(contrib.melt$vital_rate, 
+                                  levels = c("Pj", "Ph", "Pb", "Bj", "Bh", "Bb",
+                                             "Bi", "Dn", "Do", "I", "Fn", "Fo",
+                                             "Nj","Nh","Nn","No"))
+contrib.melt$co_vital_rate <- factor(contrib.melt$co_vital_rate, 
+                                  levels = c("Pj", "Ph", "Pb", "Bj", "Bh", "Bb",
+                                             "Bi", "Dn", "Do", "I", "Fn", "Fo",
+                                             "Nj","Nh","Nn","No"))
+
+# sum contribution for each vital rate
+contrib.sum <- group_by(contrib.melt, vital_rate, iter) %>%
+  dplyr::summarise(contrib = sum(value))
+
+contrib.cur.sum <- group_by(filter(contrib.melt,vital_rate_time=="cur"), 
+                            vital_rate, iter) %>%
+  dplyr::summarise(contrib = sum(value))
+```
+
+```{r}
+#plot distribution of contributions to variance in lambda
+ggplot(contrib.cur.sum,aes(x= vital_rate, y=contrib, fill = vital_rate, col = vital_rate))+
+  geom_violin(scale = "width")+
+  labs(x="Vital Rate", y = "Contrib. to Var. in Growth Rate")+
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+  #scale_x_discrete(labels = c("Juvenile Surv.", "Helper Surv.", "Breeder Surv.",
+  #                            "Breed at Age 1", "Breed at Age 2+", "Pair with Exp.",
+  #                            "Novice/Mixed Divorce", "Exp. Divorce", "Breeder Imm.",
+  #                            "Helper Imm.", "Novice Fecundity","Mixed Fecundity",
+  #                            "Exp. Fecundity","% Juvenile","% Helper","% Novice Pair",
+  #                            "% Mixed Pair", "% Exp Pair"))
+```
+
+```{r}
+#prettier plot for presentation
+#plot distribution of contributions to variance in lambda
+ggplot(filter(contrib.sum, grepl("P|B|I|F",vital_rate)),
+       aes(x= vital_rate, y=contrib, group = vital_rate, col = substr(vital_rate,1,1),
+       fill = substr(vital_rate,1,1)))+
+  geom_violin(scale = "width")+
+  scale_fill_manual(values = rate_colors)+
+  scale_color_manual(values = rate_colors)+
+  labs(x="", y = "Contrib. to Var. in Growth Rate")+
+  theme(legend.position = "none", axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size=20))
+  #scale_x_discrete(labels = c("Juvenile Surv.", "Helper Surv.", "Breeder Surv.",
+  #                            "Breed at Age 1", "Breed at Age 2+",
+  #                           "Helper Imm.","Breeder Imm.", "Novice Fec.","Mixed Fec.",
+  #                          "Exp. Fec."))
+  #scale_y_continuous(limits = c(-0.15,0.45))
+```
+
+
+# Environmental conditions
+
+I will now calculate the contribution that the environmental covariates make to the population growth rate.
+
+```{r}
+# load data
+env.fac <- read_tsv("data/generated_data/env_var_updateDemo.txt") %>%
+  data.frame()
+# load models
+load("data/generated_data/vr_modelsDemo.rdata")
+
+# add relatedness to environmental factors
+env.fac <- left_join(env.fac, AnnualRelatedness, by = "Year") %>%
+  dplyr::select(Year, acorns, burn, EQSOI, density,
+                pair.Fped) %>%
+  filter(Year < 2021)
+
+# create scales for environmental factors
+env.scale <- data.frame(factor = colnames(env.fac),
+                        center = colMeans(env.fac),
+                        scale = apply(env.fac, 2, sd))
+# pair.Fped is already scaled in env.fac
+env.scale["pair.Fped", "center"] <- 0
+env.scale["pair.Fped", "scale"] <- 1
+
+```
+
+I will create functions that outputs the sensitivity of the vital rates to the environmental variables.
+
+```{r}
+# binomial variable
+# this function will work for survival, transition rates, and nest success,
+# but will not work for immigration, offspring #, and immigrant pair prob.
+d_denv_binom <- function(model, scale, env.data, factor, Sex){
+    # extract coefficients of fixed effects
+  fe <- coef(summary(model))$cond %>%
+    {data.frame(est = .[, "Estimate"],
+                ub = .[, "Estimate"] + 1.96*.[, "Std. Error"],
+                lb = .[, "Estimate"] - 1.96*.[, "Std. Error"])}
+  rownames(fe)[1:7] <- c("int", "acorns", "burn", "Year",
+                    "EQSOI", "density", "pair.Fped")
+  
+  # add terms for sex and social class
+  if(Sex == "M"){
+    SexTerm <- coef(summary(model))$cond["SexM",] %>%
+                      {data.frame(est = .["Estimate"],
+                                  ub = .["Estimate"] + 1.96*.["Std. Error"],
+                                  lb = .["Estimate"] - 1.96*.["Std. Error"])}
+  } else{
+    SexTerm <- data.frame(est = 0, ub = 0, lb = 0)
+  }
+  
+  # if estimate bounds cross 0, set values to 0
+  fe[fe$ub > 0 & fe$lb < 0, c("est", "ub", "lb")] <- 0
+  SexTerm[SexTerm$ub > 0 & SexTerm$lb < 0, c("est", "ub", "lb")] <- 0
+
+  # calculate the mean environmental value and scale it
+  env.mean <- append(1, (colMeans(env.data) - scale$center)/scale$scale)
+  names(env.mean)[1] <- "int"
+  
+  # calculate exponential term for derivative
+  expTerm <- fe*env.mean[rownames(fe)]
+  
+  if("SexM" %in% rownames(expTerm)){
+    expTerm["SexM",] <- SexTerm
+  }
+  
+  # calculate derivative for the estimate and upper and lower boundaries
+  sen <- apply(expTerm, 2, function(x)
+    fe[factor,]*(exp(sum(x))/(exp(sum(x)) + 1)^2)) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  return(sen/scale[which(colnames(env.data) == factor), "scale"])
+}
+
+# create function for immigration using poisson function
+d_denv_pois <- function(model, scale, env.data, factor, pop){
+    # extract coefficients of fixed effects
+  fe <- coef(summary(model))$cond %>%
+    {data.frame(est = .[, "Estimate"],
+                ub = .[, "Estimate"] + 1.96*.[, "Std. Error"],
+                lb = .[, "Estimate"] - 1.96*.[, "Std. Error"])}
+  rownames(fe)[1:6] <- c("int", "acorns", "burn", "Year",
+                    "EQSOI", "density")
+  
+  # if estimate bounds cross 0, set values to 0
+  fe[fe$ub > 0 & fe$lb < 0, c("est", "ub", "lb")] <- 0
+
+  # calculate the mean environmental value and scale it
+  env.mean <- append(1, (colMeans(env.data) - scale$center)/scale$scale) %>%
+    append(1)
+  names(env.mean)[1] <- "int"
+  
+  # calculate exponential term for derivative
+  expTerm <- fe*env.mean[rownames(fe)]
+  
+  # calculate derivative for the estimate and upper and lower boundaries
+  sen <- apply(expTerm, 2, function(x)
+    # sensitivity is derivative of poisson function divided by pop size, as
+    # immigration rate is the # of immigrants divided by pop size
+    fe[factor,]*(exp(sum(x)))/scale[which(colnames(env.data) == factor), "scale"]) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  return(sen/pop)
+}
+```
+
+
+
+### Survival
+
+```{r}
+# apply sensitivity function to environmental factors for each model
+
+Pj.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Pj.model, env.scale, env.fac, x, "NA"))
+rownames(Pj.env.sen) <- c("est", "ub", "lb")
+
+PhM.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Ph.model, env.scale, env.fac, x, "M"))
+rownames(PhM.env.sen) <- c("est", "ub", "lb")
+
+PhF.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Ph.model, env.scale, env.fac, x, "F"))
+rownames(PhF.env.sen) <- c("est", "ub", "lb")
+
+Pb.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Pb.model, env.scale, env.fac, x, "NA"))
+rownames(Pb.env.sen) <- c("est", "ub", "lb")
+
+# combine into single data frame
+env.sen <- Pj.env.sen %>% melt() %>% mutate(vr = "Pj") %>%
+  bind_rows(mutate(melt(PhM.env.sen), vr = "PhM")) %>%
+  bind_rows(mutate(melt(PhF.env.sen), vr = "PhF")) %>%
+  bind_rows(mutate(melt(Pb.env.sen), vr = "Pb")) %>%
+  pivot_wider(id_cols = c("vr", "Var2"), names_from = Var1,
+              values_from = value) %>%
+  dplyr::select(vr, env = Var2, est, ub, lb)
+
+ggplot(env.sen, aes(x = env, y = est, col = vr)) + 
+  geom_point(position = position_dodge(width = 1)) + 
+  geom_errorbar(aes(ymin = lb, ymax = ub), position = position_dodge(width = 1)) + 
+  geom_hline(yintercept = 0)
+
+```
+
+
+### Transition
+
+I found no significant environmental effects on transition rates, so these models are not run.
+
+```{r, eval = FALSE}
+Bj.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Bj.model, Bj.scale, env.fac, x))
+rownames(Bj.env.sen) <- c("est", "ub", "lb")
+
+BhM.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(B.model, env.scale, env.fac, x, "M"))
+rownames(BhM.env.sen) <- c("est", "ub", "lb")
+
+Bb.env.sen <- sapply(colnames(env.fac), function(x)
+  d_denv_binom(Bb.model, Bb.scale, env.fac, x))
+rownames(Bb.env.sen) <- c("est", "ub", "lb")
+
+# combine into single data frame
+env.sen <- Bj.env.sen %>% melt() %>% mutate(vr = "Bj") %>%
+  bind_rows(mutate(melt(Bh.env.sen), vr = "Bh")) %>%
+  bind_rows(mutate(melt(Bb.env.sen), vr = "Bb")) %>%
+  pivot_wider(id_cols = c("vr", "Var2"), names_from = Var1,
+              values_from = value) %>%
+  dplyr::select(vr, env = Var2, est, ub, lb) %>%
+  bind_rows(env.sen)
+
+
+ggplot(filter(env.sen, substr(vr, 1, 1) == "B"), aes(x = env, y = est, col = vr)) + 
+  geom_point(position = position_dodge(width = 1)) + 
+  geom_errorbar(aes(ymin = lb, ymax = ub), position = position_dodge(width = 1)) + 
+  geom_hline(yintercept = 0)
+```
+
+### Immigration
+
+Next up is immigration, which uses a poisson distribution.
+
+```{r}
+# get average population size
+pop.means.F <- apply(pop.vec.F[,, 1:33], c(2,3), mean)
+pop.sum.F <- apply(pop.means.F, 2, sum) %>% mean()
+
+pop.means.M <- apply(pop.vec.M[,, 1:33], c(2,3), mean)
+pop.sum.M <- apply(pop.means.M, 2, sum) %>% mean()
+
+IF.env.sen <- sapply(colnames(env.fac[1:6]), function(x)
+                     d_denv_pois(IF.model, env.scale[1:6,], 
+                                 env.fac[, 1:6], x, pop.sum.F))
+rownames(IF.env.sen) <- c("est", "ub", "lb")
+
+IM.env.sen <- sapply(colnames(env.fac[1:6]), function(x)
+                     d_denv_pois(IM.model, env.scale[1:6,], 
+                                 env.fac[, 1:6], x, pop.sum.M))
+rownames(IM.env.sen) <- c("est", "ub", "lb")
+
+# combine into single data frame
+env.sen <- IF.env.sen %>% melt() %>% mutate(vr = "IF") %>%
+  bind_rows(mutate(melt(IM.env.sen), vr = "IM")) %>%
+  pivot_wider(id_cols = c("vr", "Var2"), names_from = Var1,
+              values_from = value) %>%
+  dplyr::select(vr, env = Var2, est, ub, lb) %>%
+  bind_rows(env.sen)
+
+ggplot(filter(env.sen, substr(vr, 1, 1) == "I"), aes(x = env, y = est, col = vr)) + 
+  geom_point(position = position_dodge(width = 1)) + 
+  geom_errorbar(aes(ymin = lb, ymax = ub), position = position_dodge(width = 1)) + 
+  geom_hline(yintercept = 0)
+
+```
+
+### Fecundity
+
+```{r}
+dF_denv <- function(model, scale, env.data, factor, pair.status){
+  # calculate sensitivity of the binomial term
+  # extract fixed effects and scale them
+  fe1 <- coef(summary(model))$zi %>%
+    {data.frame(est = .[, "Estimate"],
+                ub = .[, "Estimate"] + 1.96*.[, "Std. Error"],
+                lb = .[, "Estimate"] - 1.96*.[, "Std. Error"])}
+  rownames(fe1)[1:7] <- c("int", "acorns", "burn", "Year",
+                    "EQSOI", "density", "pair.Fped")
+  
+  # if we are looking at old pairs, modify pair.Fped effect
+  if(pair.status == "old"){
+    # calculate new standard error for pair.Fped
+    fe1["pair.Fped", "est"] <- fe1["pair.Fped:pair.statusold", "est"] +
+      fe1["pair.Fped", "est"]
+    # get standard error for pair.Fped
+    se.all.pair.Fped <- coef(summary(model))$zi["pair.Fped", "Std. Error"]
+    se.old.pair.Fped <- coef(summary(model))$zi["pair.Fped:pair.statusold",
+                                                   "Std. Error"]
+    # get covariance of parameters
+    cov.pair.Fped <- vcov(model)$zi["zi~pair.Fped", "zi~pair.Fped:pair.statusold"]
+    # calculate new standard error
+    pair.Fped.se <- sqrt((se.all.pair.Fped)^2 + (se.old.pair.Fped)^2 + 2*cov.pair.Fped)
+    # calculate ub and lb
+    fe1["pair.Fped", "ub"] <- fe1["pair.Fped", "est"] + 1.96*pair.Fped.se
+    fe1["pair.Fped", "lb"] <- fe1["pair.Fped", "est"] - 1.96*pair.Fped.se
+    fe1 <- fe1[1:8,]
+  } else{
+    fe1["pair.statusold",] <- 0
+    fe1 <- fe1[1:8,]
+  }
+  
+  # if estimate bounds cross 0, set values to 0
+  fe1[fe1$ub > 0 & fe1$lb < 0, c("est", "ub", "lb")] <- 0
+  
+  # calculate the mean environmental value and scale it
+  env.mean <- append(1, (colMeans(env.data) - scale$center)/scale$scale) %>%
+    append(1)
+  names(env.mean)[1] <- "int"
+  names(env.mean)[8] <- "pair.statusold"
+  
+  # calculate exponential term for derivative
+  expTerm1 <- fe1*env.mean[rownames(fe1)]
+  
+  # calculate derivative for the estimate and upper and lower boundaries
+  sen1 <- apply(expTerm1, 2, function(x)
+    fe1[factor,]*(exp(sum(x))/(exp(sum(x)) + 1)^2)) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  # also calculate the function in its not-derivative form for product rule
+  fun1 <- apply(expTerm1, 2, function(x)
+    (exp(sum(x)))/(1 + exp(sum(x)))) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  # repeat for zero-truncated poisson portion
+  fe2 <- coef(summary(model))$cond %>%
+    {data.frame(est = .[, "Estimate"],
+                ub = .[, "Estimate"] + 1.96*.[, "Std. Error"],
+                lb = .[, "Estimate"] - 1.96*.[, "Std. Error"])}
+  rownames(fe2)[1:7] <- c("int", "acorns", "burn", "Year",
+                    "EQSOI", "density", "pair.Fped")
+  
+  if(pair.status != "old"){
+    fe2["pair.statusold", ] <- 0
+  }
+  
+  # if estimate bounds cross 0, set values to 0
+  fe2[fe2$ub > 0 & fe2$lb < 0, c("est", "ub", "lb")] <- 0
+  
+  # calculate exponential term for derivative
+  expTerm2 <- fe2*env.mean[rownames(fe2)]
+  
+  # calculate derivative for the estimate and upper and lower boundaries
+  sen2 <- apply(expTerm2, 2, function(x)
+    fe2[factor,]*(exp(sum(x)))) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  # also calculate the function in its not-derivative form for product rule
+  fun2 <- apply(expTerm2, 2, function(x)
+    exp(sum(x))) %>%
+    unlist() %>% matrix(nrow = 3, ncol = 3) %>% diag()
+  
+  # combine the sensitivities of these two portions using 
+  # the product and chain rules
+  senTot <- (-1)*(sen1/scale[factor, "scale"])*fun2 + 
+    (1 - fun1)*(sen2/scale[factor, "scale"])
+  return(senTot/2)
+}
+
+Fnew.env.sen <- sapply(colnames(env.fac), function(x)
+  dF_denv(F.model.full, env.scale, env.fac, x, "new"))
+rownames(Fnew.env.sen) <- c("est", "ub", "lb")
+
+Fold.env.sen <- sapply(colnames(env.fac), function(x)
+  dF_denv(F.model.full, env.scale, env.fac, x, "old"))
+rownames(Fold.env.sen) <- c("est", "ub", "lb")
+
+# combine into single data frame
+env.sen <- Fnew.env.sen %>% melt() %>% mutate(vr = "Fn") %>%
+  bind_rows(mutate(melt(Fold.env.sen), vr = "Fo")) %>%
+  pivot_wider(id_cols = c("vr", "Var2"), names_from = Var1,
+              values_from = value) %>%
+  dplyr::select(vr, env = Var2, est, ub, lb) %>%
+  bind_rows(env.sen)
+
+ggplot(filter(env.sen, substr(vr, 1, 1) == "F"), aes(x = env, y = est, col = vr)) + 
+  geom_point(position = position_dodge(width = 1)) + 
+  geom_errorbar(aes(ymin = lb, ymax = ub), 
+                position = position_dodge(width = 1)) + 
+  geom_hline(yintercept = 0)
+
+```
+
+### Contributions to population growth
+
+```{r}
+# convert environmental sensitivity to matrices
+env.sen.F <- filter(env.sen, !vr %in% c("IM", "PhM")) %>%
+  {abind(.[,c(1:2, 3)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = est) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)} %>% as.matrix(),
+    .[,c(1:2, 4)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = ub) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)}%>% as.matrix(),
+    .[,c(1:2, 5)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = lb) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)}%>% as.matrix(),
+    along = 3, new.names = c("est", "ub", "lb"))}
+# convert NAs to 0
+env.sen.F[is.na(env.sen.F)] <- 0
+dimnames(env.sen.F)[[1]] <- c("Fnq", "Foq", "Iq", "Pjq",
+                              "Phq", "Pbq", "Fnc", "Foc", "Ic",
+                              "Pjc", "Phc", "Pbc")
+
+# duplicate for past and current environments
+env.sen.F <- env.sen.F %>% abind(env.sen.F, along = 2)
+dimnames(env.sen.F)[[2]] <- c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc")
+
+## set impact of future environmental conditions on past vital rates to 0
+env.sen.F[1:dim(env.sen.F)[[1]]/2,
+          (dim(env.sen.F)[[2]]/2 + 1):dim(env.sen.F)[[2]],] <- 0
+
+## set impact of past environmental conditions on future vital rates to 0
+env.sen.F[(dim(env.sen.F)[[1]]/2 + 1):dim(env.sen.F)[[1]],
+          1:dim(env.sen.F)[[2]]/2,] <- 0
+
+
+# get environmental covariance matrix
+env.cov <- cov(abind(env.fac[1:32,], env.fac[2:33,], along = 2))
+dimnames(env.cov) <- list(c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc"),
+                          c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc"))
+
+# prepare vr sensitivity matrix for multiplication by selecting relevant vrs
+sen.mean.mat.F.env <- sen.mean.mat.F[dimnames(env.sen.F)[[1]],]
+
+# multiply vr sensitivity and env sensitivity
+env.sen.orig.F <- apply(sen.mean.mat.F.env, 2, function(x) x*env.sen.F) %>%
+                array(dim = c(dim(sen.mean.mat.F.env)[1], 
+                              dim(env.sen.F)[2], 
+                              dim(env.sen.F)[3],
+                              dim(sen.mean.mat.F.env)[2]),
+                      dimnames = list(dimnames(sen.mean.mat.F.env)[[1]],
+                                      dimnames(env.sen.F)[[2]],
+                                      dimnames(env.sen.F)[[3]],
+                                      dimnames(sen.mean.mat.F.env)[[2]]))
+
+# test to make sure dimensions are correct
+sen.mean.mat.F.env[5, 82]*env.sen.F[5, 4, 1] == env.sen.orig.F[5, 4, 1, 82]
+sen.mean.mat.F.env["Ic", 82]*env.sen.F["Ic", "acornsc", 
+                                       1] == env.sen.orig.F["Ic", "acornsc", 1, 82]
+# both work!
+
+# multiply the sensitivity matrices together
+
+env.sen.orig.mult.F <- apply(env.sen.orig.F, c(3, 4), function(x)
+  outer(x, x)) %>%
+  array(dim = c(dim(env.sen.orig.F)[[1]],
+                dim(env.sen.orig.F)[[2]],
+                dim(env.sen.orig.F)[[1]],
+                dim(env.sen.orig.F)[[2]],
+                dim(env.sen.orig.F)[[3]],
+                dim(env.sen.orig.F)[[4]]),
+        dimnames = list(dimnames(env.sen.orig.F)[[1]],
+                        dimnames(env.sen.orig.F)[[2]],
+                        dimnames(env.sen.orig.F)[[1]],
+                        dimnames(env.sen.orig.F)[[2]],
+                        dimnames(env.sen.orig.F)[[3]],
+                        dimnames(env.sen.orig.F)[[4]]))
+
+# calculate the contribution to the population growth rate by multiplying the
+# resulting matrix by the environmental covariance and dividing by lambda
+contrib.env.orig.F <- apply(env.sen.orig.mult.F, c(1, 3, 5, 6), function(x)
+  x*env.cov) %>%
+  array(dim = c(dim(env.sen.orig.F)[[2]],
+                dim(env.sen.orig.F)[[2]],
+                dim(env.sen.orig.F)[[1]],
+                dim(env.sen.orig.F)[[1]],
+                dim(env.sen.orig.F)[[3]],
+                dim(env.sen.orig.F)[[4]]),
+        dimnames = list(dimnames(env.sen.orig.F)[[2]],
+                        dimnames(env.sen.orig.F)[[2]],
+                        dimnames(env.sen.orig.F)[[1]],
+                        dimnames(env.sen.orig.F)[[1]],
+                        dimnames(env.sen.orig.F)[[3]],
+                        dimnames(env.sen.orig.F)[[4]])) %>%
+  sweep(6, lambda.var.F, "/")
+
+# how I tested results: checking that by-hand multiplication matches the location
+# it should in the array
+contrib.env.orig.F[3, 4, 8, 10, 2, 5] == (env.sen.orig.mult.F[8, 3, 10, 4, 
+                                                             2, 5]*env.cov[3, 4])/
+  lambda.var.F[5]
+
+contrib.env.orig.F["Yearc", "acornsc", 
+                   "Ic", "Pbc", "est", 
+                   5] == (env.sen.orig.mult.F["Ic", "Yearc", "Pbc", "acornsc", 
+                                                             "est", 
+                                              5]*env.cov["Yearc", "acornsc"])/
+  lambda.var.F[5]
+
+# IT WORKS!!
+```
+
+Repeat for males
+
+```{r}
+# convert environmental sensitivity to matrices
+env.sen.M <- filter(env.sen, !vr %in% c("IF", "PhF")) %>%
+  {abind(.[,c(1:2, 3)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = est) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)} %>% as.matrix(),
+    .[,c(1:2, 4)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = ub) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)}%>% as.matrix(),
+    .[,c(1:2, 5)] %>% pivot_wider(id_cols = vr, names_from = env,
+                                 values_from = lb) %>%
+    column_to_rownames("vr") %>%
+      {bind_rows(., .)}%>% as.matrix(),
+    along = 3, new.names = c("est", "ub", "lb"))}
+# convert NAs to 0
+env.sen.M[is.na(env.sen.M)] <- 0
+dimnames(env.sen.M)[[1]] <- c("Fnq", "Foq", "Iq", "Pjq",
+                              "Phq", "Pbq", "Fnc", "Foc", "Ic",
+                              "Pjc", "Phc", "Pbc")
+
+# duplicate for past and current environments
+env.sen.M <- env.sen.M %>% abind(env.sen.M, along = 2)
+dimnames(env.sen.M)[[2]] <- c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc")
+
+## set impact of future environmental conditions on past vital rates to 0
+env.sen.M[1:dim(env.sen.M)[[1]]/2,
+          (dim(env.sen.M)[[2]]/2 + 1):dim(env.sen.M)[[2]],] <- 0
+
+## set impact of past environmental conditions on future vital rates to 0
+env.sen.M[(dim(env.sen.M)[[1]]/2 + 1):dim(env.sen.M)[[1]],
+          1:dim(env.sen.M)[[2]]/2,] <- 0
+
+# get environmental covariance matrix
+env.cov <- cov(abind(env.fac[1:32,], env.fac[2:33,], along = 2))
+dimnames(env.cov) <- list(c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc"),
+                          c("Yearq", "acornsq", "burnq", "EQSOIq",
+                              "densityq", "pair.Fpedq",
+                              "Yearc", "acornsc", "burnc", "EQSOIc",
+                              "densityc", "pair.Fpedc"))
+
+# prepare vr sensitivity matrix for multiplication by selecting relevant vrs
+sen.mean.mat.M.env <- sen.mean.mat.M[dimnames(env.sen.M)[[1]],]
+
+# multiply vr sensitivity and env sensitivity
+env.sen.orig.M <- apply(sen.mean.mat.M.env, 2, function(x) x*env.sen.M) %>%
+                array(dim = c(dim(sen.mean.mat.M.env)[1], 
+                              dim(env.sen.M)[2], 
+                              dim(env.sen.M)[3],
+                              dim(sen.mean.mat.M.env)[2]),
+                      dimnames = list(dimnames(sen.mean.mat.M.env)[[1]],
+                                      dimnames(env.sen.M)[[2]],
+                                      dimnames(env.sen.M)[[3]],
+                                      dimnames(sen.mean.mat.M.env)[[2]]))
+
+# test to make sure dimensions are correct
+sen.mean.mat.M.env[5, 82]*env.sen.M[5, 4, 1] == env.sen.orig.M[5, 4, 1, 82]
+sen.mean.mat.M.env["Ic", 82]*env.sen.M["Ic", "acornsc", 
+                                       1] == env.sen.orig.M["Ic", "acornsc", 1, 82]
+# both work!
+
+# multiply the sensitivity matrices together
+
+env.sen.orig.mult.M <- apply(env.sen.orig.M, c(3, 4), function(x)
+  outer(x, x)) %>%
+  array(dim = c(dim(env.sen.orig.M)[[1]],
+                dim(env.sen.orig.M)[[2]],
+                dim(env.sen.orig.M)[[1]],
+                dim(env.sen.orig.M)[[2]],
+                dim(env.sen.orig.M)[[3]],
+                dim(env.sen.orig.M)[[4]]),
+        dimnames = list(dimnames(env.sen.orig.M)[[1]],
+                        dimnames(env.sen.orig.M)[[2]],
+                        dimnames(env.sen.orig.M)[[1]],
+                        dimnames(env.sen.orig.M)[[2]],
+                        dimnames(env.sen.orig.M)[[3]],
+                        dimnames(env.sen.orig.M)[[4]]))
+
+# calculate the contribution to the population growth rate by multiplying the
+# resulting matrix by the environmental covariance and dividing by lambda
+contrib.env.orig.M <- apply(env.sen.orig.mult.M, c(1, 3, 5, 6), function(x)
+  x*env.cov) %>%
+  array(dim = c(dim(env.sen.orig.M)[[2]],
+                dim(env.sen.orig.M)[[2]],
+                dim(env.sen.orig.M)[[1]],
+                dim(env.sen.orig.M)[[1]],
+                dim(env.sen.orig.M)[[3]],
+                dim(env.sen.orig.M)[[4]]),
+        dimnames = list(dimnames(env.sen.orig.M)[[2]],
+                        dimnames(env.sen.orig.M)[[2]],
+                        dimnames(env.sen.orig.M)[[1]],
+                        dimnames(env.sen.orig.M)[[1]],
+                        dimnames(env.sen.orig.M)[[3]],
+                        dimnames(env.sen.orig.M)[[4]])) %>%
+  sweep(6, lambda.var.M, "/")
+
+# how I tested results: checking that by-hand multiplication matches the location
+# it should in the array
+contrib.env.orig.M[3, 4, 8, 10, 2, 5] == (env.sen.orig.mult.M[8, 3, 10, 4, 
+                                                             2, 5]*env.cov[3, 4])/
+  lambda.var.M[5]
+
+contrib.env.orig.M["Yearc", "acornsc", 
+                   "Ic", "Pbc", "est", 
+                   5] == (env.sen.orig.mult.M["Ic", "Yearc", "Pbc", "acornsc", 
+                                                             "est", 
+                                              5]*env.cov["Yearc", "acornsc"])/
+  lambda.var.M[5]
+
+# IT WORKS!!
+```
+
+### Final Plots
+
+
+```{r}
+# convert the array of the environmental contributions to a tall data frame
+contrib.env.F.melt <- melt(contrib.env.orig.F)
+colnames(contrib.env.F.melt) <- c("env", "co_env", "vr", "co_vr", "coef_bound",
+                                  "iter", "contrib")
+
+ggplot(filter(contrib.env.F.melt, iter == 1, coef_bound == "est"),
+       aes(x = substr(vr, 1, 1), y = contrib, fill = env)) +
+  geom_bar(stat = "identity")
+
+
+contrib.env.M.melt <- melt(contrib.env.orig.M)
+colnames(contrib.env.M.melt) <- c("env", "co_env", "vr", "co_vr", "coef_bound",
+                                  "iter", "contrib")
+
+ggplot(filter(contrib.env.M.melt, iter == 1, coef_bound == "est"),
+       aes(x = substr(vr, 1, 1), y = contrib, fill = env)) +
+  geom_bar(stat = "identity")
+
+# average results across iterations
+contrib.env.F.melt.mean <- contrib.env.F.melt %>%
+  group_by(env, co_env, vr, co_vr, coef_bound) %>%
+  dplyr::summarize(contrib = mean(contrib)) %>%
+  mutate(sex = "F")
+
+contrib.env.M.melt.mean <- contrib.env.M.melt %>%
+  group_by(env, co_env, vr, co_vr, coef_bound) %>%
+  dplyr::summarize(contrib = mean(contrib)) %>%
+  mutate(sex = "M")
+
+contrib.env.melt <- bind_rows(contrib.env.F.melt.mean, contrib.env.M.melt.mean)
+
+# sum across environmental factors
+contrib.env.sum <- contrib.env.melt %>%
+  group_by(env, co_env, coef_bound, sex) %>%
+  dplyr::summarize(contrib = sum(contrib)) %>%
+  mutate(time = ifelse(xor(grepl("q", env), grepl("q", co_env)),
+                       "cross",
+                       ifelse(!grepl("q", env) | !grepl("q", co_env),
+                              "acurrent",
+                              "past")))
+
+ggplot(filter(contrib.env.sum, coef_bound == "est"),
+       aes(x = str_sub(env, end = -2), y = contrib, 
+           fill = str_sub(co_env, end = -2))) +
+  geom_bar(stat = "identity") +
+  facet_wrap(.~sex)
+
+
+env.contrib.plot <- ggplot(filter(contrib.env.sum, coef_bound == "est"), 
+       aes(x = substr(env, 1, 1), y = contrib,
+           fill = substr(co_env, 1, 1)))+
+  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size = 25)) +
+  scale_fill_manual(values = viridis(6), 
+                    labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  geom_hline(yintercept = 0,size = 1)+
+  #scale_alpha_discrete(range = c(1,0.3))+
+  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
+       fill = "Env. Co-Factor") +
+  scale_x_discrete(labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  facet_grid(time~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model"),
+                                           time = c(acurrent = "Current\nVariance",
+                                                    past = "Time-Lagged\nVariance",
+                                                cross = "Inter-Annual\nCovariance")))
+
+
+env.contrib.plot.c <- ggplot(filter(contrib.env.sum, coef_bound == "est",
+                                  time == "acurrent"), 
+       aes(x = substr(env, 1, 1), y = contrib,
+           fill = substr(co_env, 1, 1)))+
+  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size = 25)) +
+  scale_fill_manual(values = viridis(6), 
+                    labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  geom_hline(yintercept = 0,size = 1)+
+  #scale_alpha_discrete(range = c(1,0.3))+
+  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
+       fill = "Env. Co-Factor") +
+  scale_x_discrete(labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model")))
+
+pdf(file = "figures/env_contrib_Demo_20231106.pdf",
+   width = 14,
+   height = 8.5)
+
+env.contrib.plot.c
+
+dev.off()
+```
+
+
+I will make a build in version of the last plot from the previous chunk
+
+```{r}
+
+contrib.env.melt <- mutate(contrib.env.melt,
+                           time = ifelse((grepl("q", env) | grepl("q", co_env) |
+                                            grepl("q", vr) | grepl("q", co_vr)) &
+                                           (grepl("c", env) | grepl("c", co_env) |
+                                              grepl("c", vr) | grepl("c", co_vr)),
+                                         "cross",
+                                         ifelse(!(grepl("q", env) | grepl("q", co_env) |
+                                            grepl("q", vr) | grepl("q", co_vr)),
+                                            "acurrent",
+                                            "past")))
+
+env.vr.contrib.plot <- ggplot(filter(contrib.env.melt, coef_bound == "est"), 
+       aes(x = factor(substr(vr, 1, 1),
+                         levels = c("F", "P", "I", "B")), y = contrib,
+           fill = substr(env, 1, 1)))+
+  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size = 25))+
+  scale_fill_manual(values = viridis(6), 
+                    labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  geom_hline(yintercept = 0,size = 1)+
+  #scale_alpha_discrete(range = c(1,0.3))+
+  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
+       fill = "Env. Factor") +
+  scale_x_discrete(labels = c("Fecundity",
+                              "Survival", "Immigration", "Prob. to Pair")) +
+  facet_grid(time~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model"),
+                                           time = c(acurrent = "Current\nVariance",
+                                                    past = "Time-Lagged\nVariance",
+                                                cross = "Inter-Annual\nCovariance")))
+
+env.vr.contrib.plot.c <- ggplot(filter(contrib.env.melt, coef_bound == "est",
+                                       time == "acurrent"), 
+       aes(x = factor(substr(vr, 1, 1),
+                         levels = c("F", "P", "I", "B")), y = contrib,
+           fill = substr(env, 1, 1)))+
+  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size = 25))+
+  scale_fill_manual(values = viridis(6), 
+                    labels = c("Acorn Abund.", "Burned Area",
+                               "Pop. Density", "EQSOI",
+                               "Relatedness", "Year")) +
+  geom_hline(yintercept = 0,size = 1)+
+  #scale_alpha_discrete(range = c(1,0.3))+
+  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
+       fill = "Env. Factor") +
+  scale_x_discrete(labels = c("Fecundity",
+                              "Survival", "Immigration", "Prob. to Pair")) +
+  facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model")))
+
+pdf(file = "figures/env_vr_contrib_Demo_20231106.pdf",
+   width = 14,
+   height = 8.5)
+
+env.vr.contrib.plot.c
+
+dev.off()
+``` 
+
+
+I will now make a plot that sums up all the different ways that vital rates contribute to the population growth rate.
+
+```{r}
+# get sums grouped by vital rate source
+contrib.means <- contrib.t.F %>% melt() %>%
+  dplyr::select(iter = X1, vr = Var2, co_vr = Var3, contrib = value) %>%
+  group_by(vr, co_vr) %>% dplyr::summarize(contrib = mean(contrib)) %>%
+  mutate(sex = "F")
+
+contrib.means <- contrib.t.M %>% melt() %>%
+  dplyr::select(iter = X1, vr = Var2, co_vr = Var3, contrib = value) %>%
+  group_by(vr, co_vr) %>% dplyr::summarize(contrib = mean(contrib)) %>%
+  mutate(sex = "M") %>% bind_rows(contrib.means)
+
+# get environmental contribution for each vital rate pair
+env.contrib.means <- filter(contrib.env.melt, coef_bound == "est") %>%
+  group_by(vr, co_vr, sex) %>%
+  dplyr::summarize(contrib = sum(contrib))
+
+contrib.means <- dplyr::mutate(contrib.means,
+                        # attach environmental contributions
+                        env.contrib = env.contrib.means[match(paste(vr, co_vr),
+                                                              paste(
+                                                      env.contrib.means$vr,
+                                                      env.contrib.means$co_vr)),
+                                                        ]$contrib,
+                        # subtract environmental contribution 
+                        # from total contribution
+                        demo.contrib = ifelse(!is.na(env.contrib),
+                                              contrib - env.contrib,
+                                              contrib),
+                        # identify if contribution is due to past vital rate 
+                        source = ifelse(xor(grepl("q", vr), grepl("q", co_vr)),
+                                        "cross",
+                                        ifelse(grepl("q", vr) & grepl("q", co_vr),
+                                               "past",
+                                               "acurrent")))
+contrib.means[is.na(contrib.means)] <- 0
+
+
+# create plot of just the vital rate contributions 
+## adjust rate colors
+
+rate_colors2 <- c("#003f5c", "#7a5195", "#ef5675", "#ffa600")
+names(rate_colors2) <- c("B", "I", "P", "F")
+
+vr.contrib.plot <- ggplot(filter(contrib.means, grepl("I|B|F|P", substr(vr, 1, 1)), 
+              grepl("I|B|F|P", substr(co_vr, 1, 1))), 
+       aes(x = factor(substr(vr, 1, 1), levels = c("F", "P", "I", "B")) , 
+           y = contrib, 
+           fill = factor(substr(co_vr, 1, 1), levels = c("F", "P", "I", "B")))) +
+  geom_bar(stat = "identity") +
+  theme_light() + 
+  theme(text = element_text(size = 25),
+        axis.text.x = element_text(angle = 35, hjust = 1)) +
+  scale_fill_manual(values = rate_colors2, 
+                    labels = c("Fecundity", "Survival", 
+                               "Immigration", "Prob. to Pair")) +
+  geom_hline(yintercept = 0,size = 1) +
+  labs(y = "Contrib. to Var. in Growth", x = "",
+       fill = "Co-Factor Vital Rate") +
+  scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
+                              "Prob. to Pair")) +
+  facet_grid(source~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model"),
+                                             source = c(acurrent = "Current\nVariance",
+                                                    past = "Time-Lagged\nVariance",
+                                                cross = "Inter-Annual\nCovariance")))
+
+vr.contrib.plot.c <- ggplot(filter(contrib.means, grepl("I|B|F|P", substr(vr, 1, 1)), 
+              grepl("I|B|F|P", substr(co_vr, 1, 1)),
+              source == "acurrent"), 
+       aes(x = factor(substr(vr, 1, 1), levels = c("F", "P", "I", "B")) , 
+           y = contrib, 
+           fill = factor(substr(co_vr, 1, 1), levels = c("F", "P", "I", "B")))) +
+  geom_bar(stat = "identity") +
+  theme_light() + 
+  theme(text = element_text(size = 25),
+        axis.text.x = element_text(angle = 35, hjust = 1)) +
+  scale_fill_manual(values = rate_colors2, 
+                    labels = c("Fecundity", "Survival", 
+                               "Immigration", "Prob. to Pair")) +
+  geom_hline(yintercept = 0,size = 1) +
+  labs(y = "Contrib. to Var. in Growth", x = "",
+       fill = "Co-Factor Vital Rate") +
+  scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
+                              "Prob. to Pair")) +
+  facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model")))
+
+pdf(file = "figures/vr_contrib_Demo_20231106.pdf",
+   width = 14,
+   height = 8.5)
+
+vr.contrib.plot.c
+
+dev.off()
+
+# add together variation from three main sources
+contrib.sums <- group_by(contrib.means, vr = substr(vr, 1, 1),
+                         source, sex) %>%
+  dplyr::summarize(env = sum(env.contrib),
+                   demo = sum(demo.contrib)) %>%
+  pivot_longer(c(env, demo)) %>%
+  mutate(source = ifelse(name == "env", "Aaenv", source)) %>%
+  group_by(vr, sex, source) %>%
+  dplyr::summarize(contrib = sum(value))
+```
+
+Create a plot showing the big picture of where contribution to variation in the population growth rate come from.
+
+```{r}
+overview.contrib <- ggplot(filter(contrib.sums, grepl("I|B|F|P", vr)), 
+       aes(x = factor(vr, levels = c("F", "P", "I", "B")) , 
+           y = contrib, 
+           fill = vr, alpha = source)) +
+  geom_bar(stat = "identity") +
+  scale_alpha_discrete(range = c(1,0.3),  
+                       labels = c("Environment", "Vital Rates", 
+                                  "Demo. Structure")) +
+  theme_light() + 
+  theme(text = element_text(size = 25),
+        axis.text.x = element_text(angle = 35, hjust = 1)) +
+  scale_fill_manual(values = rate_colors2, 
+                    labels = c("Transition", "Fecundity", 
+                               "Immigration", "Survival")) +
+  labs(y = "Contrib. to Var. in Growth", x = "",
+       fill = "Vital Rate", alpha = "Variance Source") +
+  geom_hline(yintercept = 0,size = 1) +
+  guides(fill = FALSE) +
+  scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
+                              "Prob. to Pair")) +
+  facet_wrap(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
+                                                M = "Male-only Model")))
+
+pdf(file = "figures/overview_contrib_Demo_20231106.pdf",
+   width = 14,
+   height = 8.5)
+
+overview.contrib
+
+dev.off()
+
+
+## create inbreeding plot
+
+# adjust inbreeding values
+AnnualRelatedness <- mutate(AnnualRelatedness, 
+                            breeder.unscale = (breeder*pair.Fped.values$sd) + 
+                              pair.Fped.values$mean)
+
+inbreeding.plot <- ggplot(AnnualRelatedness, aes(x = Year, y = breeder.unscale)) +
+  geom_line(size = 1, col = "#78d151") +
+  geom_point(size = 2, col = "#78d151") +
+  geom_hline(yintercept = 0, size = 1) + 
+  labs(y = "Average Inbreeding Coef. of Breeders") +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+pdf(file = "figures/inbreeding_plot_20231106.pdf",
+   width = 7,
+   height = 6)
+
+inbreeding.plot
+
+dev.off()
+
+### create immigration plot
+load("data/generated_data/densityCalcDemo.rdata")
+FullLOI <- read_tsv("data/FullLOI.txt") %>% data.frame
+StudySiteLOI <- filter(FullLOI, TerrYr %in% TerrsToKeep$TerrYr,
+                       Year %in% 1988:2021)
+
+# convert identify immigrant individuals as individuals new to the study site
+ImmFirstYear <- filter(StudySiteLOI,
+                       !USFWS %in% filter(StudySiteLOI, 
+                                         social.class == "juvenile")$USFWS) %>%
+  group_by(USFWS) %>%
+  dplyr::summarize(FirstYear = min(Year)) %>%
+  # filter out 1988 as a possible first year, use already decided
+  # immigrant status
+  filter(FirstYear != 1988)
+
+StudySiteLOI[paste(StudySiteLOI$USFWS, StudySiteLOI$Year) %in%
+               paste(ImmFirstYear$USFWS, ImmFirstYear$FirstYear),
+             "category"] <- "immigrant"
+
+# check for individuals who left the study tract but later came back
+IndvLastYear <- StudySiteLOI %>%
+  group_by(USFWS) %>%
+  dplyr::summarize(FirstYear = min(Year), LastYear = max(Year))
+
+MissingYears <- filter(FullLOI, !TerrYr %in% TerrsToKeep$TerrYr,
+                       Year %in% 1988:2021,
+                       USFWS %in% StudySiteLOI$USFWS) %>%
+  mutate(FirstYear = IndvLastYear[match(USFWS, IndvLastYear$USFWS),]$FirstYear,
+         LastYear = IndvLastYear[match(USFWS, IndvLastYear$USFWS),]$LastYear,
+         social.class = "helper", pair.status = "none") %>%
+  filter(Year >= FirstYear, Year <= LastYear)
+
+# there are 259 records for individuals who eventually came back to the study tract
+# add these records back into StudySiteLOI
+StudySiteLOI.clean <- bind_rows(StudySiteLOI, 
+                                dplyr::select(MissingYears, -c("FirstYear",
+                                                                "LastYear")))
+
+# convert survival metrics for individuals who leave the study area
+StudySiteLOI.clean[paste(StudySiteLOI.clean$USFWS,
+                         StudySiteLOI.clean$Year) %in%
+                     paste(IndvLastYear$USFWS,
+                           IndvLastYear$LastYear),
+                   "survival"] <- 0
+
+# correct vital rates dependent on survival
+StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
+                   "transition"] <- NA
+
+StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
+                   "divorce"] <- NA
+
+StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
+                   "back_tansition"] <- NA
+
+
+
+imm.num <- filter(FullLOI, category == "immigrant",
+                  Year >= 1988, Year <= 2021) %>%
+  group_by(Year) %>%
+  dplyr::summarize(immNum = n())
+
+
+
+imm.plot <- ggplot(imm.num, aes(x = Year, y = immNum)) +
+  geom_line(size = 1, col = "#7a5195") +
+  geom_point(size = 2, col = "#7a5195") +
+  geom_hline(yintercept = 0, size = 1) +
+  labs(y = "# of New Immigrant") +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+
+pdf(file = "figures/imm_plot_20231106.pdf",
+   width = 7,
+   height = 6)
+
+imm.plot
+
+dev.off()
+
+# create survival plot
+Annualvr <- vr.mat.F %>% reshape2::melt() %>%
+  mutate(Sex = "F") %>% dplyr::select(Sex, iter = Var1, 
+                                       vr = Var2, Year = Var3, value) %>%
+  bind_rows(vr.mat.M %>% reshape2::melt() %>% mutate(Sex = "M") %>%
+              dplyr::select(Sex, iter = Var1, vr = Var2, Year = Var3, value)) %>%
+  group_by(Sex, vr, Year) %>%
+  dplyr::summarize(mean = mean(value), sd = sd(value))
+
+ggplot(filter(Annualvr, !vr %in% c("I", "Bb", "Dn", "Do", "Bi")),
+       aes(x = Year, y = mean, col = vr)) +
+  geom_point() +
+  geom_line() +
+  geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd,
+                  fill = vr), alpha = 0.5) +
+  facet_grid(substr(vr, 1, 1)~Sex, scales = "free_y") +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+# survival plot
+pdf(file = "figures/surv_plot_20231106.pdf",
+   width = 7,
+   height = 6)
+
+ggplot(filter(Annualvr, vr %in% c("Pj", "Ph", "Pb"), Sex == "F"),
+       aes(x = Year, y = mean*100, col = vr)) +
+  geom_point(size = 2) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0, size = 1) +
+  labs(x = "Year", y = "% Annual Survival", col = "Social Class") +
+  scale_color_manual(values = c("#FF7F00", "#33A02C", "#1F78B4"), 
+                     labels = c("Juvenile", "Helper", "Breeder")) +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+dev.off()
+
+
+# fecundity plot
+pdf(file = "figures/fec_plot_20231106.pdf",
+   width = 7,
+   height = 6)
+
+ggplot(filter(Annualvr, vr %in% c("Fn", "Fo"), Sex == "F"),
+       aes(x = Year, y = mean, col = vr)) +
+  geom_point(size = 2) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0, size = 1) +
+  labs(x = "Year", y = "Mean # of Offspring", col = "Pair Status") +
+  scale_color_manual(values = c("#E31A1C", "#1F78B4"), 
+                     labels = c("New", "Old")) +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+dev.off()
+
+# transition plot
+
+pdf(file = "figures/transition_plot_20231106.pdf",
+   width = 7,
+   height = 6)
+
+ggplot(filter(Annualvr, vr %in% c("Bj", "Bh"), Sex == "M"),
+       aes(x = Year, y = mean*100, col = vr)) +
+  geom_point(size = 2) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0, size = 1) +
+  labs(x = "Year", y = "% Become Breeder", col = "Social Class") +
+  scale_color_manual(values = c("#FF7F00", "#33A02C"), 
+                     labels = c("Juvenile", "Helper")) +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+dev.off()
+
+```
+
+Create plots to display effects of factors from GLMMs
+
+```{r}
+# create plot to display effects of factors on vital rates
+
+## create function for extracting the estimate and 95% CI
+get_est <- function(model){
+  est <- coef(summary(model))$cond %>% data.frame() %>%
+    mutate(ub = Estimate + 1.96*Std..Error,
+           lb = Estimate - 1.96*Std..Error) %>%
+    rownames_to_column("factor") %>%
+    dplyr::select(factor, est = Estimate, se = Std..Error, p_value = Pr...z..,
+                  ub, lb)
+  return(est)
+}
+
+get_est_zi <- function(model){
+  est <- coef(summary(model))$zi %>% data.frame() %>%
+    mutate(ub = Estimate + 1.96*Std..Error,
+           lb = Estimate - 1.96*Std..Error) %>%
+    rownames_to_column("factor") %>%
+    dplyr::select(factor, est = Estimate, se = Std..Error, p_value = Pr...z..,
+                  ub, lb)
+  return(est)
+}
+
+# create key to adjust factor
+envFactorKey <- c("int", "acorns", "burn", "Year", "EQSOI",
+                  "density", "pedF", "SexM", "sc.j", "density", "pedF",
+                  "pair.status", "pedF")
+names(envFactorKey) <- c("(Intercept)", "acorns", "burn", "Year.scale",
+                         "EQSOI", "density", "pedF",
+                         "SexM", "social.classjuvenile", "density:SexM",
+                         "pair.Fped", "pair.statusold", "pair.Fped:pair.statusold")
+
+# gather estimate values
+model_est <- get_est(Pj.model) %>% mutate(model = "Pj") %>%
+  bind_rows(mutate(get_est(Ph.model), model = "Ph")) %>%
+  bind_rows(mutate(get_est(Pb.model), model = "Pb")) %>%
+  bind_rows(mutate(get_est(B.model), model = "B")) %>%
+  bind_rows(mutate(get_est(IM.model), model = "IM")) %>%
+  bind_rows(mutate(get_est(IF.model), model = "IF")) %>%
+  bind_rows(mutate(get_est(F.model.full), model = "F2")) %>%
+  bind_rows(mutate(get_est_zi(F.model.full), model = "F1")) %>%
+  # adjust factor names
+  mutate(fac = envFactorKey[factor],
+         Sex = ifelse(grepl("Sex", factor), "M",
+                      ifelse(factor == "density" & model == "I",
+                             "F", "both")),
+         pair = ifelse(!grepl("F", model), "none",
+                       ifelse(factor == "pair.Fped", "new",
+                              ifelse(factor == "pair.Fped:pair.statusold", "old",
+                                     "both"))))
+
+
+pdf(file = "figures/GLMM_coef_20231106.pdf",
+   width = 10,
+   height = 12)
+
+ggplot(filter(model_est, 
+              !factor %in% c("(Intercept)",
+                             "social.classjuvenile",
+                             "SexM", "pair.statusold", "EQSOIdry"),
+              !model %in% c("B", "Bi")), 
+       aes(x = model, y = est, group = paste(Sex, pair),
+           col = substr(model, 1, 1))) +
+  theme_light() +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  geom_hline(yintercept = 0) +
+  scale_color_manual(values = rate_colors2,
+                     labels = c("Fecundity", "Immigration", "Survival")) +
+  labs(x = "", y = "Fixed Effect Coef.") +
+  geom_point(position = position_dodge(width = 0.7)) +
+  geom_errorbar(aes(ymin = est - se, ymax = est + se), 
+                position = position_dodge(width = 0.7)) +
+  geom_text(aes(label = ifelse(p_value < 0.05 & p_value >=0.01, "*",
+                               ifelse(p_value < 0.01 & p_value >= 0.001,
+                                      "**",
+                                      ifelse(p_value < 0.001, "***", ""))),
+                group = paste(Sex, pair),
+                y = est + se + 0.01),
+            position = position_dodge(width = 0.7), size = 7, hjust = 0,
+            show.legend=FALSE) +
+  coord_flip() +
+  scale_x_discrete(labels = c("Failure to Breed", "Offspring #", "Female Immigration",
+                              "Male Immigration",
+                              "Breeder Surv.", "Helper Surv.", "Juvenile Surv.")) + 
+  guides(col = FALSE) + 
+  facet_wrap(.~fac, labeller = labeller(fac = c(acorns = "Acorn Abund.",
+                                                burn = "Burned Area",
+                                                density = "Pop. Density",
+                                                EQSOI = "EQSOI",
+                                                pedF = "Relatedness",
+                                                Year = "Year")),
+             nrow = 3, ncol = 2)
+
+dev.off()
+```
+
+
+Make a plot of the population growth rate based on the female model
+
+
+```{r}
+# get mean population growth rates
+lambda.means <- apply(pop.vec.F, c(1, 3), function(x)
+  sum(x)) %>% apply(1, function(x) x[2:length(x)]/x[1:(length(x) - 1)]) %>%
+  apply(1, mean)
+
+lambda.df <- data.frame(Year = 1988:2020, lambda = lambda.means)
+lambda.geo.mean <- exp(mean(log(lambda.means)))
+
+lambda.plot <- ggplot(lambda.df, aes(x = Year, y = log(lambda))) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0, size = 1) +
+  labs(y = "Population Growth Rate") + 
+  geom_hline(yintercept = log(lambda.geo.mean), size = 1, col = "chartreuse3") +
+  theme_minimal() +
+  theme(text = element_text(size = 20))
+
+pdf(file = "figures/pop_growth_20231106.pdf",
+   width = 8.5,
+   height = 6)
+
+lambda.plot
+
+dev.off()
+
+```
+
+Calculate the geometric mean population growth rate and variance in growth
+
+```{r}
+# calculate mean lambda across iterations with standard deviation
+lambda.F.mean <- data.frame(mean = apply(lambda.real.F, 2, mean),
+                            sd = apply(lambda.real.F, 2, sd),
+                            Sex = "Female-only Model")
+
+lambda.M.mean <- data.frame(mean = apply(lambda.real.M, 2, mean),
+                            sd = apply(lambda.real.M, 2, sd),
+                            Sex = "Male-only Model")
+
+lambda.mean.df <- bind_rows(lambda.F.mean, lambda.M.mean) %>%
+  mutate(Year = rep(1989:2020, 2))
+
+# get geometric mean and variance in lambda over time
+lambda.overtime <- group_by(lambda.mean.df, Sex) %>%
+  dplyr::summarize(geoMean = exp(mean(log(mean))),
+                   sd = sd(mean))
+
+# create summary of pop size
+pop.vec.F.mean <- data.frame(mean = apply(pop.vec.F, c(2, 3), mean) %>%
+  apply(2, sum),
+  sd = apply(pop.vec.F, c(2, 3), var) %>%
+  apply(2, sum) %>% sqrt(),
+  Sex = "Female-only Model", Year = 1988:2021)
+
+pop.vec.M.mean <- data.frame(mean = apply(pop.vec.M, c(2, 3), mean) %>%
+  apply(2, sum),
+  sd = apply(pop.vec.M, c(2, 3), var) %>%
+  apply(2, sum) %>% sqrt(),
+  Sex = "Male-only Model", Year = 1988:2021)
+
+pop.vec.mean.df <- bind_rows(pop.vec.F.mean, pop.vec.M.mean)
+
+# get mean and variance over time
+pop.overtime <- group_by(pop.vec.mean.df, Sex) %>%
+  dplyr::summarize(popmean = mean(mean),
+                   popsd = sd(mean))
+
+# combine growth and pop numbers for creation of one table
+pop.summary <- left_join(lambda.overtime, pop.overtime, by = "Sex")
+
+# get the observed population size and growth rate
+pop.obs <- StudySiteLOI.clean %>%
+  group_by(Year) %>%
+  dplyr::summarize(popsize = n()) %>%
+  filter(Year >= 1989)
+
+lambda.obs <- pop.obs$popsize[2:33]/pop.obs$popsize[1:32]
+
+pop.obs.summary <- data.frame(geoMean = exp(mean(log(lambda.obs))),
+                              sd = sd(lambda.obs),
+                              popmean = mean(pop.obs$popsize),
+                              popsd = sd(pop.obs$popsize),
+                              Sex = "Raw Observations")
+
+pop.summary <- bind_rows(pop.summary, pop.obs.summary)
+```
+
+
+Save generated final data frames and matrices
+
+```{r}
+save(contrib.sums, contrib.env.melt, contrib.means, contrib.t.F, contrib.t.M,
+     contrib.env.orig.F, contrib.env.orig.M, pop.vr.mat.full.F,
+     pop.vr.mat.full.M, sen.fun, lambda.real.F, lambda.real.M,
+     lambda.mean.df, pop.vec.mean.df, lambda.obs, pop.obs, pop.summary,
+     file = "data/generated_data/Demo_LTRE_results.rdata")
+
+```
