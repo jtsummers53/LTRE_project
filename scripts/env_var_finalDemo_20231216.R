@@ -2,7 +2,6 @@
 # This script generates the environmental variables used for my LTRE
 # March 2023
 
-setwd("C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
 library(tidyverse)
 
 # Acorn Data

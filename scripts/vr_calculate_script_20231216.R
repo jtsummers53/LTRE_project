@@ -3,7 +3,6 @@
 # May 2023
 
 library(tidyverse)
-setwd("C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
 
 # Inputs are the list of individuals filtered for the study tract,
 # the sex the rates are calculated for, 

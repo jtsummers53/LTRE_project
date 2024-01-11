@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
+knitr::opts_knit$set(root.dir = ".")
 library(tidyverse)
 library(plyr)
 library(reshape2)
@@ -394,7 +394,7 @@ contrib.cur.sum <- group_by(filter(contrib.melt,vital_rate_time=="cur"),
 #plot distribution of contributions to variance in lambda
 ggplot(contrib.cur.sum,aes(x= vital_rate, y=contrib, fill = vital_rate, col = vital_rate))+
   geom_violin(scale = "width")+
-  labs(x="Vital Rate", y = "Contrib. to Var. in Growth Rate")+
+  labs(x="Vital Rate", y = expression("% Contribution to Var. in" ~ lambda))+
   theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
   #scale_x_discrete(labels = c("Juvenile Surv.", "Helper Surv.", "Breeder Surv.",
   #                            "Breed at Age 1", "Breed at Age 2+", "Pair with Exp.",
@@ -413,7 +413,7 @@ ggplot(filter(contrib.sum, grepl("P|B|I|F",vital_rate)),
   geom_violin(scale = "width")+
   scale_fill_manual(values = rate_colors)+
   scale_color_manual(values = rate_colors)+
-  labs(x="", y = "Contrib. to Var. in Growth Rate")+
+  labs(x="", y = expression("% Contribution to Var. in" ~ lambda))+
   theme(legend.position = "none", axis.text.x = element_text(angle = 35, hjust = 1),
         text = element_text(size=20))
   #scale_x_discrete(labels = c("Juvenile Surv.", "Helper Surv.", "Breeder Surv.",
@@ -1051,61 +1051,41 @@ ggplot(filter(contrib.env.sum, coef_bound == "est"),
   geom_bar(stat = "identity") +
   facet_wrap(.~sex)
 
-
-env.contrib.plot <- ggplot(filter(contrib.env.sum, coef_bound == "est"), 
+env.contrib.plot.c <- ggplot(filter(contrib.env.sum, coef_bound == "est"), 
        aes(x = substr(env, 1, 1), y = contrib,
            fill = substr(co_env, 1, 1)))+
   geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
   theme_light() +
   theme(axis.text.x = element_text(angle = 35, hjust = 1),
-        text = element_text(size = 25)) +
+        text = element_text(size = 12),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        axis.title.x = element_blank()) +
   scale_fill_manual(values = viridis(6), 
                     labels = c("Acorn Abund.", "Burned Area",
                                "Pop. Density", "EQSOI",
                                "Relatedness", "Year")) +
   geom_hline(yintercept = 0,size = 1)+
-  #scale_alpha_discrete(range = c(1,0.3))+
-  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
-       fill = "Env. Co-Factor") +
-  scale_x_discrete(labels = c("Acorn Abund.", "Burned Area",
-                               "Pop. Density", "EQSOI",
-                               "Relatedness", "Year")) +
-  facet_grid(time~sex, labeller = labeller(sex = c(F = "Female-only Model", 
-                                                M = "Male-only Model"),
-                                           time = c(acurrent = "Current\nVariance",
-                                                    past = "Time-Lagged\nVariance",
-                                                cross = "Inter-Annual\nCovariance")))
-
-
-env.contrib.plot.c <- ggplot(filter(contrib.env.sum, coef_bound == "est",
-                                  time == "acurrent"), 
-       aes(x = substr(env, 1, 1), y = contrib,
-           fill = substr(co_env, 1, 1)))+
-  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
-  theme_light() +
-  theme(axis.text.x = element_text(angle = 35, hjust = 1),
-        text = element_text(size = 25)) +
-  scale_fill_manual(values = viridis(6), 
-                    labels = c("Acorn Abund.", "Burned Area",
-                               "Pop. Density", "EQSOI",
-                               "Relatedness", "Year")) +
-  geom_hline(yintercept = 0,size = 1)+
-  #scale_alpha_discrete(range = c(1,0.3))+
-  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
-       fill = "Env. Co-Factor") +
+  labs(x = "", y = expression("% Contribution to Var. in" ~ lambda), 
+       fill = "Co-Factor") +
   scale_x_discrete(labels = c("Acorn Abund.", "Burned Area",
                                "Pop. Density", "EQSOI",
                                "Relatedness", "Year")) +
   facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
                                                 M = "Male-only Model")))
 
-pdf(file = "figures/env_contrib_Demo_20231106.pdf",
-   width = 14,
-   height = 8.5)
+ggsave("figures/env_contrib_Demo_20231106.png",
+       env.contrib.plot.c,
+       width = 5,
+       height = 4,
+       units = "in",
+       dpi = 700)
 
-env.contrib.plot.c
-
-dev.off()
+ggsave("figures/env_contrib_Demo_20231106.pdf",
+       env.contrib.plot.c,
+       width = 5,
+       height = 4,
+       units = "in")
 ```
 
 
@@ -1124,59 +1104,50 @@ contrib.env.melt <- mutate(contrib.env.melt,
                                             "acurrent",
                                             "past")))
 
-env.vr.contrib.plot <- ggplot(filter(contrib.env.melt, coef_bound == "est"), 
-       aes(x = factor(substr(vr, 1, 1),
-                         levels = c("F", "P", "I", "B")), y = contrib,
-           fill = substr(env, 1, 1)))+
-  geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
-  theme_light() +
-  theme(axis.text.x = element_text(angle = 35, hjust = 1),
-        text = element_text(size = 25))+
-  scale_fill_manual(values = viridis(6), 
-                    labels = c("Acorn Abund.", "Burned Area",
-                               "Pop. Density", "EQSOI",
-                               "Relatedness", "Year")) +
-  geom_hline(yintercept = 0,size = 1)+
-  #scale_alpha_discrete(range = c(1,0.3))+
-  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
-       fill = "Env. Factor") +
-  scale_x_discrete(labels = c("Fecundity",
-                              "Survival", "Immigration", "Prob. to Pair")) +
-  facet_grid(time~sex, labeller = labeller(sex = c(F = "Female-only Model", 
-                                                M = "Male-only Model"),
-                                           time = c(acurrent = "Current\nVariance",
-                                                    past = "Time-Lagged\nVariance",
-                                                cross = "Inter-Annual\nCovariance")))
+# sum across signs to create clean blocks for plotting
+contrib.env.melt.plot <- filter(contrib.env.melt, coef_bound == "est",
+                                time == "acurrent") %>%
+  group_by(vr_cat = factor(substr(vr, 1, 1),levels = c("F", "P", "I", "B")),
+           env_cat = substr(env, 1, 1),
+           sex,
+           sign = contrib > 0) %>%
+  dplyr::summarize(contrib = sum(contrib))
 
-env.vr.contrib.plot.c <- ggplot(filter(contrib.env.melt, coef_bound == "est",
-                                       time == "acurrent"), 
-       aes(x = factor(substr(vr, 1, 1),
-                         levels = c("F", "P", "I", "B")), y = contrib,
-           fill = substr(env, 1, 1)))+
+env.vr.contrib.plot.c <- ggplot(contrib.env.melt.plot, 
+       aes(x = vr_cat, y = contrib,
+           fill = env_cat))+
   geom_bar(stat = "identity", position = position_stack(reverse = FALSE)) +
   theme_light() +
   theme(axis.text.x = element_text(angle = 35, hjust = 1),
-        text = element_text(size = 25))+
+        text = element_text(size = 12),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        axis.title.x = element_blank()) +
   scale_fill_manual(values = viridis(6), 
                     labels = c("Acorn Abund.", "Burned Area",
                                "Pop. Density", "EQSOI",
                                "Relatedness", "Year")) +
-  geom_hline(yintercept = 0,size = 1)+
-  #scale_alpha_discrete(range = c(1,0.3))+
-  labs(x = "", y = "Contrib. to Var. in Growth Rate", 
+  geom_hline(yintercept = 0, size = 1)+
+  labs(x = "", y = expression("% Contribution to Var. in" ~ lambda), 
        fill = "Env. Factor") +
   scale_x_discrete(labels = c("Fecundity",
                               "Survival", "Immigration", "Prob. to Pair")) +
   facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
                                                 M = "Male-only Model")))
 
-pdf(file = "figures/env_vr_contrib_Demo_20231106.pdf",
-   width = 14,
-   height = 8.5)
 
-env.vr.contrib.plot.c
+ggsave("figures/env_vr_contrib_Demo_20231106.png",
+       env.vr.contrib.plot.c,
+       width = 5,
+       height = 3,
+       units = "in",
+       dpi = 700)
 
-dev.off()
+ggsave("figures/env_vr_contrib_Demo_20231106.pdf",
+       env.vr.contrib.plot.c,
+       width = 5,
+       height = 3,
+       units = "in")
 ``` 
 
 
@@ -1226,57 +1197,50 @@ contrib.means[is.na(contrib.means)] <- 0
 rate_colors2 <- c("#003f5c", "#7a5195", "#ef5675", "#ffa600")
 names(rate_colors2) <- c("B", "I", "P", "F")
 
-vr.contrib.plot <- ggplot(filter(contrib.means, grepl("I|B|F|P", substr(vr, 1, 1)), 
-              grepl("I|B|F|P", substr(co_vr, 1, 1))), 
-       aes(x = factor(substr(vr, 1, 1), levels = c("F", "P", "I", "B")) , 
-           y = contrib, 
-           fill = factor(substr(co_vr, 1, 1), levels = c("F", "P", "I", "B")))) +
-  geom_bar(stat = "identity") +
-  theme_light() + 
-  theme(text = element_text(size = 25),
-        axis.text.x = element_text(angle = 35, hjust = 1)) +
-  scale_fill_manual(values = rate_colors2, 
-                    labels = c("Fecundity", "Survival", 
-                               "Immigration", "Prob. to Pair")) +
-  geom_hline(yintercept = 0,size = 1) +
-  labs(y = "Contrib. to Var. in Growth", x = "",
-       fill = "Co-Factor Vital Rate") +
-  scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
-                              "Prob. to Pair")) +
-  facet_grid(source~sex, labeller = labeller(sex = c(F = "Female-only Model", 
-                                                M = "Male-only Model"),
-                                             source = c(acurrent = "Current\nVariance",
-                                                    past = "Time-Lagged\nVariance",
-                                                cross = "Inter-Annual\nCovariance")))
+# group chunks by sign to create solid blocks
+contrib.means.plot <- filter(contrib.means, grepl("I|B|F|P", substr(vr, 1, 1)),
+                             grepl("I|B|F|P", substr(co_vr, 1, 1))) %>%
+  group_by(vr_cat = factor(substr(vr, 1, 1), levels = c("F", "P", "I", "B")),
+           co_vr_cat = factor(substr(co_vr, 1, 1), levels = c("F", "P", "I", "B")),
+                           sign = contrib > 0,
+           sex) %>%
+  dplyr::summarize(contrib = sum(contrib))
 
-vr.contrib.plot.c <- ggplot(filter(contrib.means, grepl("I|B|F|P", substr(vr, 1, 1)), 
-              grepl("I|B|F|P", substr(co_vr, 1, 1)),
-              source == "acurrent"), 
-       aes(x = factor(substr(vr, 1, 1), levels = c("F", "P", "I", "B")) , 
+vr.contrib.plot.c <- ggplot(contrib.means.plot,
+       aes(x = vr_cat , 
            y = contrib, 
-           fill = factor(substr(co_vr, 1, 1), levels = c("F", "P", "I", "B")))) +
+           fill = co_vr_cat)) +
   geom_bar(stat = "identity") +
   theme_light() + 
-  theme(text = element_text(size = 25),
-        axis.text.x = element_text(angle = 35, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        text = element_text(size = 12),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        axis.title.x = element_blank()) +
   scale_fill_manual(values = rate_colors2, 
                     labels = c("Fecundity", "Survival", 
                                "Immigration", "Prob. to Pair")) +
   geom_hline(yintercept = 0,size = 1) +
-  labs(y = "Contrib. to Var. in Growth", x = "",
-       fill = "Co-Factor Vital Rate") +
+  labs(y = expression("% Contribution to Var. in" ~ lambda), x = "",
+       fill = "Co-Factor") +
   scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
                               "Prob. to Pair")) +
   facet_grid(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
                                                 M = "Male-only Model")))
 
-pdf(file = "figures/vr_contrib_Demo_20231106.pdf",
-   width = 14,
-   height = 8.5)
 
-vr.contrib.plot.c
+ggsave("figures/vr_contrib_Demo_20231106.png",
+       vr.contrib.plot.c,
+       width = 5,
+       height = 4,
+       units = "in",
+       dpi = 700)
 
-dev.off()
+ggsave("figures/vr_contrib_Demo_20231106.pdf",
+       vr.contrib.plot.c,
+       width = 5,
+       height = 4,
+       units = "in")
 
 # add together variation from three main sources
 contrib.sums <- group_by(contrib.means, vr = substr(vr, 1, 1),
@@ -1287,223 +1251,6 @@ contrib.sums <- group_by(contrib.means, vr = substr(vr, 1, 1),
   mutate(source = ifelse(name == "env", "Aaenv", source)) %>%
   group_by(vr, sex, source) %>%
   dplyr::summarize(contrib = sum(value))
-```
-
-Create a plot showing the big picture of where contribution to variation in the population growth rate come from.
-
-```{r}
-overview.contrib <- ggplot(filter(contrib.sums, grepl("I|B|F|P", vr)), 
-       aes(x = factor(vr, levels = c("F", "P", "I", "B")) , 
-           y = contrib, 
-           fill = vr, alpha = source)) +
-  geom_bar(stat = "identity") +
-  scale_alpha_discrete(range = c(1,0.3),  
-                       labels = c("Environment", "Vital Rates", 
-                                  "Demo. Structure")) +
-  theme_light() + 
-  theme(text = element_text(size = 25),
-        axis.text.x = element_text(angle = 35, hjust = 1)) +
-  scale_fill_manual(values = rate_colors2, 
-                    labels = c("Transition", "Fecundity", 
-                               "Immigration", "Survival")) +
-  labs(y = "Contrib. to Var. in Growth", x = "",
-       fill = "Vital Rate", alpha = "Variance Source") +
-  geom_hline(yintercept = 0,size = 1) +
-  guides(fill = FALSE) +
-  scale_x_discrete(labels = c("Fecundity", "Survival", "Immigration", 
-                              "Prob. to Pair")) +
-  facet_wrap(.~sex, labeller = labeller(sex = c(F = "Female-only Model", 
-                                                M = "Male-only Model")))
-
-pdf(file = "figures/overview_contrib_Demo_20231106.pdf",
-   width = 14,
-   height = 8.5)
-
-overview.contrib
-
-dev.off()
-
-
-## create inbreeding plot
-
-# adjust inbreeding values
-AnnualRelatedness <- mutate(AnnualRelatedness, 
-                            breeder.unscale = (breeder*pair.Fped.values$sd) + 
-                              pair.Fped.values$mean)
-
-inbreeding.plot <- ggplot(AnnualRelatedness, aes(x = Year, y = breeder.unscale)) +
-  geom_line(size = 1, col = "#78d151") +
-  geom_point(size = 2, col = "#78d151") +
-  geom_hline(yintercept = 0, size = 1) + 
-  labs(y = "Average Inbreeding Coef. of Breeders") +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-pdf(file = "figures/inbreeding_plot_20231106.pdf",
-   width = 7,
-   height = 6)
-
-inbreeding.plot
-
-dev.off()
-
-### create immigration plot
-load("data/generated_data/densityCalcDemo.rdata")
-FullLOI <- read_tsv("data/FullLOI.txt") %>% data.frame
-StudySiteLOI <- filter(FullLOI, TerrYr %in% TerrsToKeep$TerrYr,
-                       Year %in% 1988:2021)
-
-# convert identify immigrant individuals as individuals new to the study site
-ImmFirstYear <- filter(StudySiteLOI,
-                       !USFWS %in% filter(StudySiteLOI, 
-                                         social.class == "juvenile")$USFWS) %>%
-  group_by(USFWS) %>%
-  dplyr::summarize(FirstYear = min(Year)) %>%
-  # filter out 1988 as a possible first year, use already decided
-  # immigrant status
-  filter(FirstYear != 1988)
-
-StudySiteLOI[paste(StudySiteLOI$USFWS, StudySiteLOI$Year) %in%
-               paste(ImmFirstYear$USFWS, ImmFirstYear$FirstYear),
-             "category"] <- "immigrant"
-
-# check for individuals who left the study tract but later came back
-IndvLastYear <- StudySiteLOI %>%
-  group_by(USFWS) %>%
-  dplyr::summarize(FirstYear = min(Year), LastYear = max(Year))
-
-MissingYears <- filter(FullLOI, !TerrYr %in% TerrsToKeep$TerrYr,
-                       Year %in% 1988:2021,
-                       USFWS %in% StudySiteLOI$USFWS) %>%
-  mutate(FirstYear = IndvLastYear[match(USFWS, IndvLastYear$USFWS),]$FirstYear,
-         LastYear = IndvLastYear[match(USFWS, IndvLastYear$USFWS),]$LastYear,
-         social.class = "helper", pair.status = "none") %>%
-  filter(Year >= FirstYear, Year <= LastYear)
-
-# there are 259 records for individuals who eventually came back to the study tract
-# add these records back into StudySiteLOI
-StudySiteLOI.clean <- bind_rows(StudySiteLOI, 
-                                dplyr::select(MissingYears, -c("FirstYear",
-                                                                "LastYear")))
-
-# convert survival metrics for individuals who leave the study area
-StudySiteLOI.clean[paste(StudySiteLOI.clean$USFWS,
-                         StudySiteLOI.clean$Year) %in%
-                     paste(IndvLastYear$USFWS,
-                           IndvLastYear$LastYear),
-                   "survival"] <- 0
-
-# correct vital rates dependent on survival
-StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
-                   "transition"] <- NA
-
-StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
-                   "divorce"] <- NA
-
-StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
-                   "back_tansition"] <- NA
-
-
-
-imm.num <- filter(FullLOI, category == "immigrant",
-                  Year >= 1988, Year <= 2021) %>%
-  group_by(Year) %>%
-  dplyr::summarize(immNum = n())
-
-
-
-imm.plot <- ggplot(imm.num, aes(x = Year, y = immNum)) +
-  geom_line(size = 1, col = "#7a5195") +
-  geom_point(size = 2, col = "#7a5195") +
-  geom_hline(yintercept = 0, size = 1) +
-  labs(y = "# of New Immigrant") +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-
-pdf(file = "figures/imm_plot_20231106.pdf",
-   width = 7,
-   height = 6)
-
-imm.plot
-
-dev.off()
-
-# create survival plot
-Annualvr <- vr.mat.F %>% reshape2::melt() %>%
-  mutate(Sex = "F") %>% dplyr::select(Sex, iter = Var1, 
-                                       vr = Var2, Year = Var3, value) %>%
-  bind_rows(vr.mat.M %>% reshape2::melt() %>% mutate(Sex = "M") %>%
-              dplyr::select(Sex, iter = Var1, vr = Var2, Year = Var3, value)) %>%
-  group_by(Sex, vr, Year) %>%
-  dplyr::summarize(mean = mean(value), sd = sd(value))
-
-ggplot(filter(Annualvr, !vr %in% c("I", "Bb", "Dn", "Do", "Bi")),
-       aes(x = Year, y = mean, col = vr)) +
-  geom_point() +
-  geom_line() +
-  geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd,
-                  fill = vr), alpha = 0.5) +
-  facet_grid(substr(vr, 1, 1)~Sex, scales = "free_y") +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-# survival plot
-pdf(file = "figures/surv_plot_20231106.pdf",
-   width = 7,
-   height = 6)
-
-ggplot(filter(Annualvr, vr %in% c("Pj", "Ph", "Pb"), Sex == "F"),
-       aes(x = Year, y = mean*100, col = vr)) +
-  geom_point(size = 2) +
-  geom_line(size = 1) +
-  geom_hline(yintercept = 0, size = 1) +
-  labs(x = "Year", y = "% Annual Survival", col = "Social Class") +
-  scale_color_manual(values = c("#FF7F00", "#33A02C", "#1F78B4"), 
-                     labels = c("Juvenile", "Helper", "Breeder")) +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-dev.off()
-
-
-# fecundity plot
-pdf(file = "figures/fec_plot_20231106.pdf",
-   width = 7,
-   height = 6)
-
-ggplot(filter(Annualvr, vr %in% c("Fn", "Fo"), Sex == "F"),
-       aes(x = Year, y = mean, col = vr)) +
-  geom_point(size = 2) +
-  geom_line(size = 1) +
-  geom_hline(yintercept = 0, size = 1) +
-  labs(x = "Year", y = "Mean # of Offspring", col = "Pair Status") +
-  scale_color_manual(values = c("#E31A1C", "#1F78B4"), 
-                     labels = c("New", "Old")) +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-dev.off()
-
-# transition plot
-
-pdf(file = "figures/transition_plot_20231106.pdf",
-   width = 7,
-   height = 6)
-
-ggplot(filter(Annualvr, vr %in% c("Bj", "Bh"), Sex == "M"),
-       aes(x = Year, y = mean*100, col = vr)) +
-  geom_point(size = 2) +
-  geom_line(size = 1) +
-  geom_hline(yintercept = 0, size = 1) +
-  labs(x = "Year", y = "% Become Breeder", col = "Social Class") +
-  scale_color_manual(values = c("#FF7F00", "#33A02C"), 
-                     labels = c("Juvenile", "Helper")) +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-dev.off()
-
 ```
 
 Create plots to display effects of factors from GLMMs
@@ -1561,81 +1308,70 @@ model_est <- get_est(Pj.model) %>% mutate(model = "Pj") %>%
                                      "both"))))
 
 
-pdf(file = "figures/GLMM_coef_20231106.pdf",
-   width = 10,
-   height = 12)
 
-ggplot(filter(model_est, 
-              !factor %in% c("(Intercept)",
-                             "social.classjuvenile",
-                             "SexM", "pair.statusold", "EQSOIdry"),
-              !model %in% c("B", "Bi")), 
+GLMM_plot <- ggplot(filter(model_est, !fac %in% c("int", "SexM", "sc.j",
+                                                  "pair.status")), 
        aes(x = model, y = est, group = paste(Sex, pair),
            col = substr(model, 1, 1))) +
   theme_light() +
-  theme(text = element_text(size = 20),
-        axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1,
+                                   size = 10),
+        axis.title.x = element_text(size = 10),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()) + 
   geom_hline(yintercept = 0) +
   scale_color_manual(values = rate_colors2,
                      labels = c("Fecundity", "Immigration", "Survival")) +
   labs(x = "", y = "Fixed Effect Coef.") +
   geom_point(position = position_dodge(width = 0.7)) +
   geom_errorbar(aes(ymin = est - se, ymax = est + se), 
-                position = position_dodge(width = 0.7)) +
+                position = position_dodge(width = 0.7),
+                width = 0.5) +
   geom_text(aes(label = ifelse(p_value < 0.05 & p_value >=0.01, "*",
                                ifelse(p_value < 0.01 & p_value >= 0.001,
                                       "**",
                                       ifelse(p_value < 0.001, "***", ""))),
                 group = paste(Sex, pair),
-                y = est + se + 0.01),
-            position = position_dodge(width = 0.7), size = 7, hjust = 0,
-            show.legend=FALSE) +
+                y = ifelse((est + se) > 0.4,
+                            est - se - 0.01,
+                           est + se + 0.01),
+                 hjust = ifelse((est + se) > 0.4,
+                                1,
+                                0)),
+            position = position_dodge(width = 0), size = 5,
+            show.legend = FALSE) +
+  geom_text(data = filter(model_est, fac == "pedF"), x = 2.8, y = 0.40,
+            label = "Est. Pair", size = 3) +
+  geom_text(data = filter(model_est, fac == "pedF"), x = 2.4, y = -0.15,
+            label = "New Pair", size = 3) +
   coord_flip() +
-  scale_x_discrete(labels = c("Failure to Breed", "Offspring #", "Female Immigration",
+  scale_x_discrete(labels = c("Probability to Pair", "Failure to Breed", "Offspring #", 
+                              "Female Immigration",
                               "Male Immigration",
-                              "Breeder Surv.", "Helper Surv.", "Juvenile Surv.")) + 
+                              "Breeder Survival", "Helper Survival", 
+                              "Juvenile Survival")) + 
   guides(col = FALSE) + 
-  facet_wrap(.~fac, labeller = labeller(fac = c(acorns = "Acorn Abund.",
+  facet_wrap(.~fac, labeller = labeller(fac = c(acorns = "Acorn Abundance",
                                                 burn = "Burned Area",
-                                                density = "Pop. Density",
+                                                density = "Population Density",
                                                 EQSOI = "EQSOI",
                                                 pedF = "Relatedness",
                                                 Year = "Year")),
              nrow = 3, ncol = 2)
 
-dev.off()
-```
 
+ggsave("figures/GLMM_coef_20231106.png",
+       GLMM_plot,
+       width = 5,
+       height = 5,
+       dpi = 700)
 
-Make a plot of the population growth rate based on the female model
-
-
-```{r}
-# get mean population growth rates
-lambda.means <- apply(pop.vec.F, c(1, 3), function(x)
-  sum(x)) %>% apply(1, function(x) x[2:length(x)]/x[1:(length(x) - 1)]) %>%
-  apply(1, mean)
-
-lambda.df <- data.frame(Year = 1988:2020, lambda = lambda.means)
-lambda.geo.mean <- exp(mean(log(lambda.means)))
-
-lambda.plot <- ggplot(lambda.df, aes(x = Year, y = log(lambda))) +
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  geom_hline(yintercept = 0, size = 1) +
-  labs(y = "Population Growth Rate") + 
-  geom_hline(yintercept = log(lambda.geo.mean), size = 1, col = "chartreuse3") +
-  theme_minimal() +
-  theme(text = element_text(size = 20))
-
-pdf(file = "figures/pop_growth_20231106.pdf",
-   width = 8.5,
-   height = 6)
-
-lambda.plot
-
-dev.off()
-
+# output as pdf as well
+ggsave("figures/GLMM_coef_20231106.pdf",
+       GLMM_plot,
+       width = 5,
+       height = 5)
 ```
 
 Calculate the geometric mean population growth rate and variance in growth
@@ -1706,6 +1442,6 @@ save(contrib.sums, contrib.env.melt, contrib.means, contrib.t.F, contrib.t.M,
      contrib.env.orig.F, contrib.env.orig.M, pop.vr.mat.full.F,
      pop.vr.mat.full.M, sen.fun, lambda.real.F, lambda.real.M,
      lambda.mean.df, pop.vec.mean.df, lambda.obs, pop.obs, pop.summary,
-     file = "data/generated_data/Demo_LTRE_results.rdata")
+     file = "data/generated_data/Demo_LTRE_results_20231106.rdata")
 
 ```

@@ -9,7 +9,6 @@ library(glmmTMB)
 library(tidyverse)
 library(DHARMa)
 library(performance)
-setwd("C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
 
 # load required files
 ## List of individuals
@@ -70,6 +69,9 @@ StudySiteLOI.clean[StudySiteLOI.clean$survival == 0,
 
 StudySiteLOI.clean[StudySiteLOI.clean$survival == 0, 
                    "back_tansition"] <- NA
+
+# convert USFWS to character
+StudySiteLOI.clean$USFWS <- paste(StudySiteLOI.clean$USFWS)
 
 # load inbreeding values
 ped.update <- read_tsv("data/pedInbr.txt") %>% data.frame()
@@ -286,6 +288,32 @@ IM.model <- glmmTMB(I ~ acorns + burn + Year.scale + EQSOI + density,
 F.df <- filter(LOI.env.fec, Year >= 1988, Sex == "F") %>%
   mutate(NestSuccess = as.numeric(fecundity > 0))
 
+# run linear models to test for whether we should consider interaction terms
+# or not
+F.lm.acorns <- glmmTMB(fecundity ~ acorns*pair.status,
+                       ziformula = ~ acorns*pair.status,
+                       family = "poisson", data = F.df) 
+
+F.lm.burn <- glmmTMB(fecundity ~ burn*pair.status,
+                       ziformula = ~ burn*pair.status,
+                       family = "poisson", data = F.df) 
+
+F.lm.Year <- glmmTMB(fecundity ~ Year.scale*pair.status,
+                     ziformula = ~ Year.scale*pair.status,
+                     family = "poisson", data = F.df) 
+
+F.lm.EQSOI <- glmmTMB(fecundity ~ EQSOI*pair.status,
+                     ziformula = ~ EQSOI*pair.status,
+                     family = "poisson", data = F.df) 
+
+F.lm.density <- glmmTMB(fecundity ~ density*pair.status,
+                     ziformula = ~ density*pair.status,
+                     family = "poisson", data = F.df)
+
+F.lm.Fped <- glmmTMB(fecundity ~ pair.Fped*pair.status,
+                        ziformula = ~ pair.Fped*pair.status,
+                        family = "poisson", data = F.df) 
+
 # create plot to test associations between env factors and fecundity
 F.plot <- F.df %>% dplyr::select(fecundity, NestSuccess,
                                  pair.status, pair.Fped, acorns,
@@ -311,15 +339,21 @@ fec.interact <- ggplot(F.plot, aes(x = value, y = fecundity,
                                           Year.scale = "Year"))) +
   labs(x = "Scaled Factor", y = "# of Offspring", col = "Pair Status") +
   theme_light() +
-  theme(text = element_text(size = 20))
+  theme(text = element_text(size = 12))
 
-pdf(file = "figures/fec_interaction_plot_20231105.pdf",
-    width = 14,
-    height = 8.5)
+ggsave("figures/fec_interaction_plot_20231105.png",
+       fec.interact,
+       width = 5,
+       height = 4,
+       units = "in",
+       dpi = 700)
 
-fec.interact
+ggsave("figures/fec_interaction_plot_20231105.pdf",
+       fec.interact,
+       width = 5,
+       height = 4,
+       units = "in")
 
-dev.off()
 
 # need to plot for pair.Fped differently
 pair.Fped.fec <- filter(F.plot, NestSuccess == 1,
@@ -450,6 +484,7 @@ check_predictions(IF.model)
 save(LOI.env, LOI.env.fec, pedF.values, pair.Fped.values, AnnualRelatedness,
      Pj.model, Ph.model, Pb.model, Pb.model.no1997, B.model,
      IF.model, IM.model, F.model.nooutlier, F.model, F.model.full,
+     F.lm.acorns, F.lm.burn, F.lm.density, F.lm.EQSOI, F.lm.Fped, F.lm.Year,
      file = "data/generated_data/vr_modelsDemo.rdata")
 
 # save model validation results

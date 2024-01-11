@@ -4,11 +4,6 @@
 # This script calculates the number of adult females and males
 # within a well-censused area of the study tract for all years. 
 
-# this version of the script works for Demo tract only
-
-# set working directory
-setwd("C:/Users/jtsum/OneDrive/2019-0-spring/elasticity_project/rotation3/final_fileset/")
-
 # libraries required
 library(tidyverse)
 
